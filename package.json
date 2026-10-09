@@ -1,0 +1,25 @@
+{
+  "name": "paperclip-primeagent-adapter-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.16.0",
+  "allowScripts": { "better-sqlite3": false },
+  "workspaces": ["packages/*"],
+  "engines": { "node": "24.18.0" },
+  "scripts": {
+    "build": "npm run build -w @deepextrema/paperclip-primeagent-adapter && npm run build -w @deepextrema/paperclip-primeagent-bff",
+    "typecheck": "npm run typecheck --workspaces",
+    "test:unit": "vitest run",
+    "verify:offline": "node scripts/check-kernel-lock.mjs && npm run build && npm run typecheck && npm run test:unit",
+    "verify:upstream": "node scripts/verify-upstream.mjs",
+    "build:native": "node scripts/check-kernel-lock.mjs && node scripts/build-native.mjs",
+    "qualify:native": "node scripts/native-managed-smoke.mjs",
+    "qualify:native:advanced": "node scripts/native-advanced-smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "9.6.0",
+    "@types/node": "26.1.2",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

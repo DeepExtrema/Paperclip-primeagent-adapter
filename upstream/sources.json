@@ -1,0 +1,17 @@
+{
+  "paperclip": {
+    "url": "https://github.com/paperclipai/paperclip.git",
+    "revision": "467125fafb47a8520856504fecc48d6e32055db1",
+    "patch": "upstream/patches/paperclip.patch"
+  },
+  "primeAgent": {
+    "url": "https://github.com/PrimeIntellect-ai/prime-agent.git",
+    "revision": "08ff1b2e2794ea9e8f4a08d12bc95408a66e1074",
+    "patch": "upstream/patches/prime-agent.patch"
+  },
+  "primeCatalog": {
+    "url": "https://github.com/PrimeIntellect-ai/prime-agent-catalog.git",
+    "revision": "d4a099cf2aae7ea8c231298e93fd535756ef43c9",
+    "patch": "upstream/patches/prime-catalog.patch"
+  }
+}

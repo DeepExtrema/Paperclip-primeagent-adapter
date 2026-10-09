@@ -1,0 +1,28 @@
+# Security boundaries and limits
+
+This integration runs **untrusted code** chosen by an LLM. A prompt saying “do not touch secrets” is not a sandbox. Deploy only on a supported Linux x86_64 host with user/mount/network namespaces and `/usr/bin/bwrap`; do not expose the BFF TCP port outside loopback. Treat both the host and BFF as privileged security components; neither is a public unauthenticated agent service. The worker can write the **assigned workspace** and call specifically brokered external effects, so give it only a dedicated, non-sensitive tree and narrowly approved capabilities.
+
+## Credential and network custody
+
+- Paperclip retains the subscription's credentials, refresh lifecycle, connection grants, authenticated model catalog and its own API authorization. Distinct short-purpose execute/control capabilities go only from the patched host adapter to the loopback BFF. The BFF checks them against host-issued final authority; a generic Paperclip agent JWT is not a worker credential.
+- BFF-to-worker IPC is a restricted Unix socket. The worker receives no provider bearer, general Paperclip bearer, ambient home credentials, `CODEX_HOME` or `OPENAI_API_KEY`, and has no general egress/network namespace. Only the host broker can issue provider requests and governed Paperclip MCP calls on its behalf.
+- The selected model is exact (`openai-codex/gpt-6.1-sol` for this profile) and subscription-only. Credentials cannot be “fixed” by putting a token in the workspace, prompt, adapter URL, worker environment or BFF config; alternate providers/API-key billing and implicit fallback are out of scope.
+- The host broker is on loopback too. Do not expose its purpose-bound internal Prime routes through a public proxy or log bearer headers, callback payloads or config secrets. A client that can control the host/BFF service identity or host database is outside this worker isolation boundary.
+
+## Filesystem, native dependencies and effects
+
+The BFF config specifies a private state root and exact complete-runtime/native-binary SHA-256 values. Its owner-only state includes SQLite/WAL, lock, control secret and immutable checkpoint files; never put it under a writable project workspace. Pinned binary/runtime, host `bwrap`, assigned workspace path and read-only skills/resources are validated before dispatch. The worker's workspace is **writable by design**, not an OS read-only replica. It may run code/Git inside that tree; the host must not run automatic clone/worktree, setup, restore or runtime-service commands on its behalf. Mounting an external Git worktree's privileged `.git` directory, a credential home, another company's path, or an overlapping unknown-held workspace defeats the intended separation and is not supported.
+
+The native Python kernel runs the real patched Prime runtime, not a replacement scripted shell. Its own kernel state can include task data; session checkpoints, transcripts, logs and prompt/usage receipts are sensitive even without provider tokens. Back them up as private records and apply retention controls as you would to source code and issue content. The native dependency wheel and npm tree are assembled from pinned sources/hash-locked Python requirements; `THIRD_PARTY_LICENSES` is generated with the assembled runtime. Package source provenance does not remove the need for OS hardening and supply-chain review of fetched wheels/binaries.
+
+Controlled-native probes exercised these boundaries rather than inferring them from source alone: network/private-root probes were denied; hostile `rlm.py`/`sitecustomize` startup injection resulted in a contained Python startup failure with no outside marker, **not** successful kernel startup; a malicious Git alias/pre-commit hook actually ran inside contained Python without writing an outside marker. These are scoped observations, not proof that every Git hook, Python startup path, kernel or deployment is safe.
+
+Only assigned MCP tools and managed skills are exposed. Host authorization is still required at *each effect*, including approval and denial. The operation records an external effect identity before dispatch; losing the response is **not** proof of failure and cannot justify a retry. The native `finish` tool records status intent, never directly writes a Paperclip issue status. Paperclip's authorization and settled terminal receipt gate the actual commit.
+
+## Availability is part of the safety contract
+
+If a provider, governed action, worker, descendant or host finalization may have accepted work but lacks settlement proof, the physical writer stays held across BFF/host restart. This can block useful work indefinitely. Neither `kill -9`, owner-lock removal, truncating WAL, deleting an “uncertain” row nor copying a checkpoint into a new session can prove that an effect did not occur. Read [recovery](recovery.md) before incident response; manual investigation can establish facts, but the public API does not provide a “trust me” promotion or unsafe reset.
+
+Not promised: multi-platform support, SSH/remote placement, WSL resident attachment, host Git synchronization, autonomous extensions, discovery/refinement/schedules, ambient MCP access, universal model support, performance or quality advantage over Pi or other Prime adapters. The package's environment probe checks only BFF reachability/protocol; even successful source CI is **not** a live provider or a penetration test.
+
+The managed subscription profile is **not yet live-qualified**: a new canary stopped at catalog startup and its uncertain writer remains held, with no observed model or governed-action dispatch. Controlled provider/MCP fixtures cannot establish live authenticated account selection, issue mutation, usage or final settlement.

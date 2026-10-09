@@ -1,0 +1,28 @@
+Paperclip Prime Agent Adapter and standalone BFF
+Copyright (c) 2026 DeepExtrema. Licensed under MIT; see LICENSE.
+
+Paperclip AI: Copyright (c) 2025 Paperclip AI.
+Paperclip adapter interfaces, integration conventions and optional host patches
+originate in the Paperclip AI project (MIT): https://github.com/paperclipai/paperclip
+
+Prime Agent: Copyright (c) 2025 Mario Zechner.
+Copyright (c) 2026 Prime Intellect.
+Native runtime, ACP, kernel, model catalog and optional source patches originate
+in the upstream Prime projects (MIT):
+https://github.com/PrimeIntellect-ai/prime-agent
+https://github.com/PrimeIntellect-ai/prime-agent-catalog
+
+Original full MIT notices are preserved under upstream/licenses/ and in each
+distributed npm package's licenses/ directory.
+
+When assembling the separate native executable, Bun 1.4.0 contributes its
+runtime (MIT) and statically linked JavaScriptCore/WebKit (LGPL 2.0) and
+TinyCC (LGPL 2.1). Bun's pinned license/attribution, complete LGPL texts and
+the pinned TinyCC COPYING are under upstream/licenses/. Binary redistribution
+also requires the corresponding covered-library sources, notices and a usable
+relink/rebuild route; see docs/licensing.md. This source repository alone is
+not a complete distribution of those compiled third-party components.
+
+This repository does not include those full upstream source trees or a prebuilt
+native runtime. Any separately assembled native runtime must retain upstream
+license files and include licenses/notices for all redistributed dependencies.

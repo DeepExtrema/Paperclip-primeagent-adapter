@@ -1,0 +1,31 @@
+{
+  "name": "@deepextrema/paperclip-primeagent-bff",
+  "version": "0.1.0",
+  "description": "Loopback execution broker and contained native Prime Agent worker for Paperclip",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DeepExtrema/Paperclip-primeagent-adapter.git",
+    "directory": "packages/bff"
+  },
+  "homepage": "https://github.com/DeepExtrema/Paperclip-primeagent-adapter#readme",
+  "bugs": { "url": "https://github.com/DeepExtrema/Paperclip-primeagent-adapter/issues" },
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": "24.18.0" },
+  "bin": { "paperclip-primeagent-bff": "./dist/index.js" },
+  "exports": {
+    ".": { "types": "./dist/server.d.ts", "import": "./dist/server.js" }
+  },
+  "files": ["dist", "LICENSE", "NOTICE", "licenses"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@deepextrema/paperclip-primeagent-adapter": "0.1.0",
+    "@hono/node-server": "2.0.12",
+    "better-sqlite3": "13.0.2",
+    "hono": "4.13.5"
+  }
+}

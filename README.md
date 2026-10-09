@@ -1,0 +1,60 @@
+# Paperclip Prime Agent adapter
+
+> **Explicit prerelease — not live end-to-end qualified.** The selected subscription is fenced by an unresolved provider request. Publication does not authorize clearing, retrying or bypassing that hold.
+
+An **opt-in, managed-local integration with actual Prime Agent** for a pinned Paperclip host. It is not Pi, a generic chat wrapper, or a replacement for other Paperclip adapters. The external `prime_bff` adapter talks to a standalone, loopback-only BFF; the BFF starts the patched Prime Agent native ACP executable and its Python kernel inside a restricted Linux worker. Paperclip retains the subscription credentials and governs provider requests, assigned MCP effects, and issue disposition. Selecting this adapter on one agent does not change existing agents or the default adapter.
+
+**Public artifact scope:** complete adapter/BFF source, upstream patches, locks and build recipes, plus GitHub release tarballs for `@deepextrema/paperclip-primeagent-adapter` and `@deepextrema/paperclip-primeagent-bff`. The tarballs contain built package code and notices, **not** a Prime/Bun executable, Python environment or `node_modules`. Operators assemble the actual native runtime **locally** from pinned sources. No prebuilt native image is redistributed, and these packages have not been published to the npm registry. Offline and controlled-broker results are not authenticated end-to-end qualification. See [installation](docs/install.md) and [recovery](docs/recovery.md).
+
+## Documents
+
+- [Install and qualify](docs/install.md): pinned sources, toolchain, assembly, registration, fresh-state operator sequence, and the difference between offline checks and a provider-consuming run.
+- [Configure an agent](docs/configuration.md): selection, dedicated workspace, exact model/connection, BFF config, skills and MCP.
+- [Architecture and continuity](docs/architecture.md): authority, wire boundaries, real native kernel, checkpoints, settlement, accounting and finalization.
+- [Security boundaries](docs/security.md): credential custody, containment, permissions, unsupported capabilities and threat assumptions.
+- [Recovery and operations](docs/recovery.md): stop/unknown conditions, retained physical exclusion, stale owner locks, upgrades and backups.
+- [Source-inspection comparison](docs/comparison.md): measured scope of comparisons with other Prime adapters and official Pi.
+- [Contributing](docs/contributing.md), [licensing](docs/licensing.md), and [changelog](CHANGELOG.md).
+
+## Compatibility at this revision
+
+| Component | Required source/version |
+| --- | --- |
+| Paperclip host | [`467125fafb47a8520856504fecc48d6e32055db1`](upstream/sources.json) **plus** `upstream/patches/paperclip.patch` and host migration `0294_prime_runtime` |
+| Prime Agent | [`08ff1b2e2794ea9e8f4a08d12bc95408a66e1074`](upstream/sources.json), native 0.9.7 **plus** `upstream/patches/prime-agent.patch` |
+| Prime model catalog | [`d4a099cf2aae7ea8c231298e93fd535756ef43c9`](upstream/sources.json) **plus** `upstream/patches/prime-catalog.patch` |
+| Runtime/build | Linux x86_64; Node 24.18.0; npm 11.16.0; Bun 1.4.0; uv 0.12.10; portable CPython 3.14.7; `/usr/bin/bwrap`; GNU coreutils `/usr/bin/cp` for native assembly |
+| Adapter/BFF | `@deepextrema/paperclip-primeagent-adapter` and `@deepextrema/paperclip-primeagent-bff` at compatible 0.1.0; BFF protocol v3 |
+
+These are *exact* compatibility pins, not lower bounds. The initial selected route is `openai-codex/gpt-6.1-sol` via an authorized OpenAI subscription grant. The committed Prime catalog patch supplies native model metadata; Paperclip independently checks the currently authenticated subscription catalog at admission. A static catalog entry alone is not proof of account availability. There is no automatic provider/model fallback, API-key substitution, or universal model-support claim.
+
+## What this profile changes—and does not
+
+The Paperclip host issues final, run-scoped authority only for an opted-in `prime_bff` agent with a pre-existing dedicated local project/execution workspace, a concrete issue assignment, an authorized responsible user and subscription connection. The workspace is writable; assigned skills and read-only resources are mounted separately. The native Prime Python reasoning/tool loop, compaction and bounded children run inside containment; the BFF brokers their requests through a restricted Unix socket. The worker has no ambient network and no host auth home or general Paperclip bearer. Scope mismatches and missing checkpoints refuse admission rather than silently fresh-starting.
+
+The trade-off is reduced flexibility and potentially indefinite unavailability when an external effect has an unknown outcome: the physical workspace writer stays excluded until *correlated provider, worker, descendant and governed-effect settlement* can actually be established. The implementation intentionally does not provide automatic workspace/worktree creation, host Git capture, remote/SSH execution, ambient extension discovery, autonomous schedules, or a generic trust-promotion/reset API. See [security](docs/security.md) before enabling the adapter.
+
+## Exercised verification
+
+These checks use fresh disposable state, not historical runs. Each row identifies the boundary actually exercised:
+
+| Surface | Observed result and limit |
+| --- | --- |
+| Adapter/BFF offline | TypeScript build/typecheck and 74 deterministic behavior tests passed; no live subscription or native process follows from this row |
+| Patched host, isolated tests | Fresh PostgreSQL migration, external adapter registration, cross-company overlapping-root exclusion, retained unknown holds and settled provenance checks passed; 18 broker tests and 69 workspace tests passed, with additional real PostgreSQL coverage of no-owner UUID filtering |
+| Actual UI/probe | “Prime Agent” appears separately from Codex; saved per-agent configuration and loopback environment probe work without changing defaults; probe does not authenticate a provider |
+| Host HTTP transport, controlled fixture | The real broker and PostgreSQL completed catalog admission and correlated SSE settlement over HTTP using native-compatible subscription headers; replaying the same completed receipt issued no second provider POST. Authorization and the provider were fixtures, not an authenticated account |
+| Actual Prime 0.9.7 + Python, controlled broker | Two real Python cells preserved counter state; private-file and credential probes were hidden and an outbound socket denied; governed comment/finish receipts settled; a sealed checkpoint resumed the native journal in a new worker; a 1,204,156-byte Unicode provider request crossed IPC |
+| Additional controlled-broker native scenarios | Child depth 2/total 4 limits enforced (depth 3/fifth rejected) and descendants settled; explicit compaction journaled; threshold compaction triggered with 2.3 MiB input and **fixture-reported** 785,005/800,000 tokens, not measured live token usage; assigned MCP allow, approval-to-completed and approval-to-failed/rejected paths followed the original effect status without a second dispatch; uncertain cancellation held the writer and rejected another admission |
+| Containment probes, controlled native | Hostile Python startup injection failed within containment, with no outside marker (not a successful kernel run); an actually invoked malicious Git alias/pre-commit hook ran inside contained Python, with no outside marker. These scenarios are not a general penetration-test guarantee |
+| Subscription-backed managed execution | **Blocked; not qualified.** After catalog-version correction, a new run authenticated exact model `gpt-6.1-sol` and native Prime accepted its session. Its first provider request returned an uncertain receipt without a response ID. A separate new scope was refused before provider work because the earlier AI account owner remained unresolved. No live settled model turn, Python/child completion, issue finalization or continuity is claimed |
+
+The controlled broker supplies provider responses and governed API receipts; those rows are **not** authenticated subscription or live issue-mutation evidence. A resumed journal does not restore arbitrary Python RAM or replay prior cells. All uncertain canaries remain held. Changing the issue or workspace does not bypass an unresolved account owner. Completing live qualification requires original-owner settlement or a separately authorized distinct subscription, plus a fresh scoped run with correlated settlement; see [installation](docs/install.md).
+
+## Comparison in context
+
+Other integrations solve different problems: cblab provides WSL resident-root attach/list and explicit per-wake RPC mode; sergeevgit1 supplies remote SSH placement, skill staging and streaming; official Paperclip Pi has mature local/remote Pi integration and provider configuration. They genuinely launch their stated agents, and their inspected sources must not be recast as toy integrations. This repository chooses a narrower managed-local credential/settlement profile; no source review or smoke run establishes universal superiority, speed, quality, or native-feature parity. [The comparison](docs/comparison.md) separates inspected source evidence from unexecuted claims.
+
+## License
+
+MIT for original adapter/BFF and documentation; Paperclip, Prime Agent and Prime catalog retain their own MIT notices. A compiled native Prime executable also incorporates Bun 1.4.0 and statically linked LGPL-licensed WebKit/JavaScriptCore and TinyCC, requiring corresponding notices and a genuine rebuild/relink route on binary redistribution. See [licensing](docs/licensing.md), [NOTICE](NOTICE), and [upstream/licenses](upstream/licenses). Native dependency licenses must accompany any separately assembled runtime; the current source collector is not by itself a complete executable-level legal audit.

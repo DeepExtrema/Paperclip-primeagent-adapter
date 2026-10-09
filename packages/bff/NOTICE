@@ -1,0 +1,20 @@
+Paperclip Prime Agent Adapter and standalone BFF
+Copyright (c) 2026 DeepExtrema. Licensed under MIT; see LICENSE.
+
+Paperclip AI: Copyright (c) 2025 Paperclip AI.
+Paperclip adapter interfaces, integration conventions and optional host patches
+originate in the Paperclip AI project (MIT): https://github.com/paperclipai/paperclip
+
+Prime Agent: Copyright (c) 2025 Mario Zechner.
+Copyright (c) 2026 Prime Intellect.
+Native runtime, ACP, kernel, model catalog and optional source patches originate
+in the upstream Prime projects (MIT):
+https://github.com/PrimeIntellect-ai/prime-agent
+https://github.com/PrimeIntellect-ai/prime-agent-catalog
+
+Original full MIT notices are preserved under upstream/licenses/ and in each
+distributed npm package's licenses/ directory.
+
+This repository does not include those full upstream source trees or a prebuilt
+native runtime. Any separately assembled native runtime must retain upstream
+license files and include licenses/notices for all redistributed dependencies.
