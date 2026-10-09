@@ -16,6 +16,10 @@ jobs:
           cache: npm
       - run: npm install --global npm@11.16.0
       - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Permit user namespaces on this disposable Ubuntu runner
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Verify real namespace creation before running containment tests
+        run: bwrap --unshare-all --die-with-parent --ro-bind / / --proc /proc /usr/bin/true
       - run: npm ci
       - run: npm run verify:offline
   pinned-source-patches:
