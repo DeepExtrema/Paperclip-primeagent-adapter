@@ -8,15 +8,29 @@
     "directory": "packages/bff"
   },
   "homepage": "https://github.com/DeepExtrema/Paperclip-primeagent-adapter#readme",
-  "bugs": { "url": "https://github.com/DeepExtrema/Paperclip-primeagent-adapter/issues" },
+  "bugs": {
+    "url": "https://github.com/DeepExtrema/Paperclip-primeagent-adapter/issues"
+  },
   "license": "MIT",
   "type": "module",
-  "engines": { "node": "24.18.0" },
-  "bin": { "paperclip-primeagent-bff": "./dist/index.js" },
-  "exports": {
-    ".": { "types": "./dist/server.d.ts", "import": "./dist/server.js" }
+  "engines": {
+    "node": "24.18.0"
   },
-  "files": ["dist", "LICENSE", "NOTICE", "licenses"],
+  "bin": {
+    "paperclip-primeagent-bff": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "licenses"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -26,6 +40,6 @@
     "@deepextrema/paperclip-primeagent-adapter": "0.1.0",
     "@hono/node-server": "2.0.12",
     "better-sqlite3": "13.0.2",
-    "hono": "4.13.5"
+    "hono": "^4.13.7"
   }
 }
