@@ -2,6 +2,13 @@
 
 Changes here describe the public source at a revision, not a claim that a managed live subscription run has qualified for production. Distribution readiness requires separate recorded evidence for the exact artifact and authorized environment.
 
+## Unreleased — host credential-owner repair
+
+- Separated Prime's host credential-owner lifetime from uncertain provider/workspace outcomes. Host unregister now closes admission, aborts catalog/stream HTTP scopes and drains admitted credential use before account cleanup; an already-admitted OAuth refresh may finish its independent commit, but cannot dispatch another catalog request after closure.
+- Preserved unresolved refresh fences/recovery homes, CLI/native detached-owner rules, provider/governed/worker uncertainty and host/BFF physical writer exclusion. New account markers include run/agent/adapter identity for individual operator attribution; no automatic stale-owner sweeper or reset/replay endpoint was added.
+- Passed 80 targeted host tests, including five new PostgreSQL race/uncertainty regressions. The host compiled, and an explicitly authorized, individually evidenced account-owner recovery was followed by two real account admission/read/cleanup cycles with HTTP dispatch forbidden. Existing agent configurations and the original held provider/writer state were unchanged. No live model success is claimed.
+- This correction changes the host source patch only: adapter/BFF npm artifacts, native runtime, protocol and schema remain unchanged. The `v0.1.0` source tag does not contain the repair.
+
 ## 0.1.0 — explicit prerelease — 2026-10-09
 
 - Added opt-in `prime_bff` Paperclip external adapter and a standalone loopback BFF that launches the actual patched Prime Agent 0.9.7 native ACP/Python runtime in Linux x86_64 containment. Other agents and defaults remain unchanged.

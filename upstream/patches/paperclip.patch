@@ -3144,7 +3144,7 @@ index c2a1795..35aa1ee 100644
    changesRequestedCount: z.number().int().nonnegative().optional().default(0),
  });
 diff --git c/server/src/__tests__/ai-connections.test.ts w/server/src/__tests__/ai-connections.test.ts
-index fd72880..25dd44e 100644
+index fd72880..ff19e27 100644
 --- c/server/src/__tests__/ai-connections.test.ts
 +++ w/server/src/__tests__/ai-connections.test.ts
 @@ -4,7 +4,8 @@ import { issueRecoveryActionService } from "../services/issue-recovery-actions.j
@@ -3166,13 +3166,14 @@ index fd72880..25dd44e 100644
  import express from "express";
  import request from "supertest";
  import { aiConnectionRoutes, canInstallSharedAiConnectionForNewAgent, responsibleUserForAiRequest } from "../routes/ai-connections.js";
-@@ -387,6 +388,195 @@ describe("managed AI connections", () => {
+@@ -387,6 +388,199 @@ describe("managed AI connections", () => {
        await Promise.all([parent.cleanup(), child.cleanup()]);
      }
    });
-+  it("serializes a canonical native subscription across independent homes and preserves an admitted rotation after cancellation", async () => {
++  it.each(["omp_local", "prime_bff"])("serializes %s credential ownership and preserves an admitted rotation after cancellation", async (adapterType) => {
 +    const adapters = AI_CONNECTION_CAPABILITIES.openai.methods.subscription.adapters;
-+    adapters.push("omp_local");
++    const addedAdapter = !adapters.includes(adapterType);
++    if (addedAdapter) adapters.push(adapterType);
 +    const jwt = (account: string) => `e30.${Buffer.from(JSON.stringify({
 +      exp: Math.floor(Date.now() / 1000) + 3600,
 +      "https://api.openai.com/auth": { chatgpt_account_id: account },
@@ -3189,7 +3190,7 @@ index fd72880..25dd44e 100644
 +      await db.insert(companyMemberships).values({ companyId, principalId: userId, principalType: "user", status: "active", membershipRole: "member" });
 +      await service.save(companyId, userId, { provider: "openai", method: "subscription", ownership: "personal",
 +        name: "Native lifecycle", loginSessionId: "fixture", allAgents: true, agentIds: [] }, auth("initial"));
-+      const selection = { companyId, agentId, responsibleUserId: userId, adapterType: "omp_local",
++      const selection = { companyId, agentId, responsibleUserId: userId, adapterType,
 +        binding: { provider: "openai", method: "subscription", mode: "responsible_user" } as const, config: {} };
 +      const first = await prepareManagedAiRuntime(db, selection);
 +      runtimes.push(first);
@@ -3208,6 +3209,7 @@ index fd72880..25dd44e 100644
 +      });
 +      await entered;
 +      cancelled.abort();
++      await expect(first.cleanup()).rejects.toThrow("refresh fenced");
 +      await expect(prepareManagedAiRuntime(db, selection)).rejects.toMatchObject({ details: { code: "ai_connection_busy" } });
 +      await expect(prepareManagedAiRuntime(db, { ...selection, adapterType: "codex_local" }))
 +        .rejects.toMatchObject({ details: { code: "ai_connection_busy" } });
@@ -3227,7 +3229,7 @@ index fd72880..25dd44e 100644
 +      await expect(second.managedAiCredential!.read()).rejects.toThrow();
 +    } finally {
 +      await Promise.all(runtimes.map(runtime => runtime.cleanup()));
-+      adapters.splice(adapters.indexOf("omp_local"), 1);
++      if (addedAdapter) adapters.splice(adapters.indexOf(adapterType), 1);
 +    }
 +  });
 +
@@ -3299,16 +3301,18 @@ index fd72880..25dd44e 100644
 +    }
 +  });
 +
-+  it("retains a restricted rotated credential and canonical fence when grant revocation defeats copyback", async () => {
++  it.each(["omp_local", "prime_bff"])("retains %s rotated credentials and the canonical fence when grant revocation defeats copyback", async (adapterType) => {
 +    const adapters = AI_CONNECTION_CAPABILITIES.openai.methods.subscription.adapters;
-+    adapters.push("omp_local");
++    const addedAdapter = !adapters.includes(adapterType);
++    if (addedAdapter) adapters.push(adapterType);
++    const accountId = `${adapterType}-recovery-account`;
 +    const jwt = (account: string) => `e30.${Buffer.from(JSON.stringify({
 +      exp: Math.floor(Date.now() / 1000) + 3600,
 +      "https://api.openai.com/auth": { chatgpt_account_id: account },
 +    })).toString("base64url")}.signature`;
 +    const auth = (refresh: string) => JSON.stringify({ tokens: {
-+      access_token: jwt("recovery-account"), id_token: jwt("recovery-account"),
-+      account_id: "recovery-account", refresh_token: refresh,
++      access_token: jwt(accountId), id_token: jwt(accountId),
++      account_id: accountId, refresh_token: refresh,
 +    }, last_refresh: "2026-10-07T00:00:00Z" });
 +    const userId = `native-recovery-${randomUUID()}`;
 +    let recoveryHome: string | undefined;
@@ -3317,7 +3321,7 @@ index fd72880..25dd44e 100644
 +      const saved = await service.save(companyId, userId, { provider: "openai", method: "subscription",
 +        ownership: "personal", name: "Revoked native", loginSessionId: "fixture", allAgents: true, agentIds: [] }, auth("original"));
 +      const runtime = await prepareManagedAiRuntime(db, { companyId, agentId, responsibleUserId: userId,
-+        adapterType: "omp_local", binding: { provider: "openai", method: "subscription", mode: "responsible_user" }, config: {} });
++        adapterType, binding: { provider: "openai", method: "subscription", mode: "responsible_user" }, config: {} });
 +      recoveryHome = runtime.home;
 +      let accepted!: () => void;
 +      let complete!: (value: string) => void;
@@ -3354,7 +3358,7 @@ index fd72880..25dd44e 100644
 +      const [stored] = await db.select().from(companySecrets).where(eq(companySecrets.id, secretId));
 +      expect(stored.latestVersion).toBe(1);
 +    } finally {
-+      adapters.splice(adapters.indexOf("omp_local"), 1);
++      if (addedAdapter) adapters.splice(adapters.indexOf(adapterType), 1);
 +      if (recoveryHome) await rm(recoveryHome, { recursive: true, force: true });
 +    }
 +  });
@@ -3362,7 +3366,7 @@ index fd72880..25dd44e 100644
    it("persists the freshest refreshed credential to its original grant across a same-account reconnect", async () => {
      const auth = (marker: string, hour: number) => JSON.stringify({ tokens: { account_id: "fixture-account", id_token: `id-${marker}`, access_token: `access-${marker}`, refresh_token: `refresh-${marker}` }, last_refresh: `2026-09-10T${hour}:00:00Z` });
      const intent = { provider: "openai" as const, method: "subscription" as const, name: "Refresh test", ownership: "personal" as const, agentIds: [], allAgents: true, loginSessionId: "fixture" };
-@@ -466,7 +656,7 @@ describe("managed AI connections", () => {
+@@ -466,7 +660,7 @@ describe("managed AI connections", () => {
      const stored = await service.credential(await service.select({ ...runInput, userId }));
      expect(stored).toBe(auth("newer", now + 2 * 60 * 60 * 1000));
    });
@@ -3371,7 +3375,7 @@ index fd72880..25dd44e 100644
      const userId = "revoked-write-back-user";
      await db.insert(companyMemberships).values({ companyId, principalId: userId, principalType: "user", status: "active", membershipRole: "member" });
      const auth = (marker: string, hour: number) => JSON.stringify({ tokens: { account_id: "fixture-account", id_token: `id-${marker}`, access_token: `access-${marker}`, refresh_token: `refresh-${marker}` }, last_refresh: `2026-09-10T${hour}:00:00Z` });
-@@ -476,16 +666,17 @@ describe("managed AI connections", () => {
+@@ -476,16 +670,17 @@ describe("managed AI connections", () => {
      const [grantBeforeCleanup] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, saved.grantId));
      const ref = grantBeforeCleanup.credentialSecretRefs.find(r => r.configPath === "ai.credential")!;
      const [secretBefore] = await db.select().from(companySecrets).where(eq(companySecrets.id, ref.secretId));
@@ -3393,7 +3397,7 @@ index fd72880..25dd44e 100644
    });
    it("does not let a stale write-back overwrite an authorized secret rotation that commits while cleanup waits on the credential lock", async () => {
      const userId = "credential-lock-race-user";
-@@ -819,6 +1010,19 @@ describe("managed AI connections", () => {
+@@ -819,6 +1014,19 @@ describe("managed AI connections", () => {
          redirect: "error",
        }));
        expect(release).toHaveBeenCalledTimes(inline ? 3 : 2);
@@ -4625,7 +4629,7 @@ index 2b00cc1..3cba06c 100644
            actor,
            currentExecutionState.currentParticipant ?? null,
 diff --git c/server/src/services/ai-connection-runtime.ts w/server/src/services/ai-connection-runtime.ts
-index 534f5cf..2bf09d6 100644
+index 534f5cf..1008938 100644
 --- c/server/src/services/ai-connection-runtime.ts
 +++ w/server/src/services/ai-connection-runtime.ts
 @@ -1,6 +1,6 @@
@@ -4645,7 +4649,7 @@ index 534f5cf..2bf09d6 100644
  
  export function isAiConnectionBusy(error: unknown): error is HttpError {
    return error instanceof HttpError && error.status === 422 &&
-@@ -192,6 +193,105 @@ export function managedAiSessionFingerprintConfig(
+@@ -192,11 +193,111 @@ export function managedAiSessionFingerprintConfig(
    return { ...config, env };
  }
  
@@ -4751,7 +4755,13 @@ index 534f5cf..2bf09d6 100644
  export async function prepareManagedAiRuntime(
    db: Db,
    input: {
-@@ -236,7 +336,8 @@ export async function prepareManagedAiRuntime(
+     companyId: string;
+     agentId: string;
++    runId?: string;
+     responsibleUserId: string | null;
+     adapterType: string;
+     binding: AiConnectionBinding;
+@@ -236,7 +337,8 @@ export async function prepareManagedAiRuntime(
    });
    const subscriptionFile =
      selection.attribution.method === "subscription" &&
@@ -4761,7 +4771,7 @@ index 534f5cf..2bf09d6 100644
    let home: string | undefined;
    try {
      const selectedGrantId = selection.grant.id;
-@@ -251,6 +352,9 @@ export async function prepareManagedAiRuntime(
+@@ -251,6 +353,9 @@ export async function prepareManagedAiRuntime(
        throw unprocessable(
          "The selected default changed. Retry this execution.",
        );
@@ -4771,7 +4781,7 @@ index 534f5cf..2bf09d6 100644
      const value = await service.credential(selection);
      home = await mkdtemp(
        path.join(
-@@ -263,7 +367,7 @@ export async function prepareManagedAiRuntime(
+@@ -263,7 +368,7 @@ export async function prepareManagedAiRuntime(
      const env: Record<string, unknown> = {
        ...stripAiAuthBindings(input.config.env),
        ...Object.fromEntries(AI_AUTH_ENV_KEYS.map((key) => [key, ""])),
@@ -4780,7 +4790,7 @@ index 534f5cf..2bf09d6 100644
      };
      const capability =
        AI_CONNECTION_CAPABILITIES[input.binding.provider].methods[
-@@ -277,7 +381,7 @@ export async function prepareManagedAiRuntime(
+@@ -277,7 +382,7 @@ export async function prepareManagedAiRuntime(
          { mode: 0o600 },
        );
      if (subscriptionFile) await writeFile(authFile, value, { mode: 0o600 });
@@ -4789,7 +4799,7 @@ index 534f5cf..2bf09d6 100644
      if (
        input.binding.provider === "openai" &&
        selection.attribution.method === "api_key"
-@@ -293,11 +397,232 @@ export async function prepareManagedAiRuntime(
+@@ -293,11 +398,237 @@ export async function prepareManagedAiRuntime(
        });
        env.OPENCODE_DISABLE_PROJECT_CONFIG = "true";
      }
@@ -4995,7 +5005,12 @@ index 534f5cf..2bf09d6 100644
 +          if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
 +            const marker = await open(ownerFile!, "wx", 0o600);
 +            try {
-+              await marker.writeFile(JSON.stringify({ version: 1, grantId: selection.grant.id, home, token: ownerToken, pid: process.pid, processStart: (await processStartIdentity(process.pid)) ?? "", createdAt: new Date().toISOString() }));
++              await marker.writeFile(JSON.stringify({
++                version: 2, companyId: input.companyId, agentId: input.agentId,
++                runId: input.runId ?? null, adapterType: input.adapterType,
++                grantId: selection.grant.id, home, token: ownerToken, pid: process.pid,
++                processStart: (await processStartIdentity(process.pid)) ?? "", createdAt: new Date().toISOString(),
++              }));
 +              await marker.sync();
 +            } finally { await marker.close(); }
 +            await syncDirectory(ownerDir!);
@@ -5023,7 +5038,7 @@ index 534f5cf..2bf09d6 100644
      return {
        config: {
          ...input.config,
-@@ -309,9 +634,26 @@ export async function prepareManagedAiRuntime(
+@@ -309,9 +640,26 @@ export async function prepareManagedAiRuntime(
        accountOwnerUserId: selection.grant.subjectUserId,
        identity,
        home,
@@ -5052,7 +5067,7 @@ index 534f5cf..2bf09d6 100644
              const refreshed = await readFile(authFile, "utf8");
              if (refreshed !== value)
                await db.transaction(async (tx) => {
-@@ -325,14 +667,16 @@ export async function prepareManagedAiRuntime(
+@@ -325,14 +673,16 @@ export async function prepareManagedAiRuntime(
                      ),
                    )
                    .for("update");
@@ -5074,17 +5089,17 @@ index 534f5cf..2bf09d6 100644
                  // Lock the referenced secret row for the rest of this
                  // transaction. The grant-row lock above does not cover it,
                  // so an authorized rotation of this secret could otherwise
-@@ -376,8 +720,39 @@ export async function prepareManagedAiRuntime(
+@@ -376,8 +726,39 @@ export async function prepareManagedAiRuntime(
                    .where(eq(connectionGrants.id, grant.id));
                });
            }
 +          if (ownerDir && ownerFile) {
 +            const fence = path.join(path.dirname(ownerDir), `${path.basename(ownerDir, ".owners")}.json`);
-+            if (!nativeSubscription) {
-+              try { await readFile(fence); throw new Error(`Managed subscription copyback fenced; restricted recovery home: ${home}`); }
-+              catch (error) {
-+                if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
-+              }
++            // Native credentials are host-owned, but an OAuth rotation still
++            // needs its own durable settlement before account admission opens.
++            try { await readFile(fence); throw new Error(`Managed subscription refresh fenced; restricted recovery home: ${home}`); }
++            catch (error) {
++              if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
 +            }
 +            await withCredentialGate(ownerDir, async () => {
 +              const marker: unknown = JSON.parse(await readFile(ownerFile!, "utf8"));
@@ -5318,7 +5333,7 @@ index 2382fae..c8b5563 100644
        // A recorded branch whose ref is confirmed absent (not merely unreadable)
        // has nothing to lose, so adopting the clean checked-out branch is
 diff --git c/server/src/services/heartbeat.ts w/server/src/services/heartbeat.ts
-index 6cce1f3..cfdef41 100644
+index 6cce1f3..5ed13ce 100644
 --- c/server/src/services/heartbeat.ts
 +++ w/server/src/services/heartbeat.ts
 @@ -32,6 +32,9 @@ import { applyConnectorSkills, prepareConnectorSkillDelivery, resolveConnectorAs
@@ -5326,7 +5341,7 @@ index 6cce1f3..cfdef41 100644
  import { connectionIntentService } from "./connection-intents.js";
  import { managedAiSessionFingerprintConfig, prepareManagedAiRuntime, assertManagedAiProjectAuth, stripAiAuthBindings, isAiConnectionBusy, AI_AUTH_ENV_KEYS } from "./ai-connection-runtime.js";
 +import { issuePrimeAuthority } from "./prime-runtime-authority.js";
-+import { finalizePrimeRun, primeProviderRequiresHold, registerPrimeHostRun } from "./prime-broker.js";
++import { finalizePrimeRun, registerPrimeHostRun } from "./prime-broker.js";
 +import { PrimeWorkspaceAdmissionError, PrimeWorkspaceRequiresReviewError, reservePrimePhysicalWriter } from "./prime-workspace-safety.js";
  import { aiConnectionBindingSchema } from "@paperclipai/shared";
  import { executionBlockerPredicate, getExecutionBlocker } from "./execution-blocker.js";
@@ -5719,7 +5734,7 @@ index 6cce1f3..cfdef41 100644
      ) {
        // A numeric PID or process-group ID is a liveness signal, never an
        // ownership capability: the OS may have recycled it after the service
-@@ -20315,8 +20392,12 @@ export function heartbeatService(
+@@ -20315,8 +20392,11 @@ export function heartbeatService(
        Parameters<typeof cleanupGitHubOperationLaunchers>[0] | null = null;
      let nativeSessionResumeScheduled = false;
      let nativeOwnershipHeld = false;
@@ -5727,12 +5742,11 @@ index 6cce1f3..cfdef41 100644
 +    let nativeCredentialSettlementUnconfirmed = false;
      let nativeInstructionReservation: Awaited<ReturnType<typeof reserveWarmNativeInstructionDirectory>> = null;
      let nativeDispatchStarted = false;
-+    let primeOwnershipHeld = false;
 +    let primeRun = claimedAdapterType(run) === "prime_bff";
      let nativeWorkspaceFinalizeScheduled = false;
      let nativeWorkspaceSync: Awaited<
        ReturnType<typeof prepareNativeWorkspaceSync>
-@@ -20362,6 +20443,7 @@ export function heartbeatService(
+@@ -20362,6 +20442,7 @@ export function heartbeatService(
        if (selectedAdapter && selectedAdapter !== agent.adapterType) {
          throw new Error("Agent adapter changed during startup; start a new turn with the updated agent.");
        }
@@ -5740,7 +5754,7 @@ index 6cce1f3..cfdef41 100644
  
        const dispatchIssueId = readNonEmptyString(parseObject(run.contextSnapshot).issueId);
        const resumingAdmittedConversationTurn = !!runOptions.nativeLeaseOwner
-@@ -21481,6 +21563,40 @@ export function heartbeatService(
+@@ -21481,6 +21562,40 @@ export function heartbeatService(
          // preserving isolated mode and the mandatory sandbox preflight.
          ...(useIsolatedTaskDirectory ? { workspaceStrategy: { type: "project_primary" } } : {}),
        };
@@ -5781,9 +5795,12 @@ index 6cce1f3..cfdef41 100644
        const configSnapshot = buildExecutionWorkspaceConfigSnapshot(
          mergedConfig,
          selectedEnvironmentId,
-@@ -21540,6 +21656,16 @@ export function heartbeatService(
+@@ -21538,8 +21653,18 @@ export function heartbeatService(
+       readFailureReportSecrets = () => collectRunFailureSecretValues(resolvedConfig.env, secretKeys);
+       if (aiBinding) {
          try {
-           managedAiRuntime = await prepareManagedAiRuntime(db, { companyId: agent.companyId, agentId: agent.id, responsibleUserId, adapterType: agent.adapterType, binding: aiBinding, config: resolvedConfig });
+-          managedAiRuntime = await prepareManagedAiRuntime(db, { companyId: agent.companyId, agentId: agent.id, responsibleUserId, adapterType: agent.adapterType, binding: aiBinding, config: resolvedConfig });
++          managedAiRuntime = await prepareManagedAiRuntime(db, { companyId: agent.companyId, agentId: agent.id, runId: run.id, responsibleUserId, adapterType: agent.adapterType, binding: aiBinding, config: resolvedConfig });
          } catch (error) {
 +          if (reattachingNativeRunner) {
 +            // The claimed runner may still be using its retained credential
@@ -5798,7 +5815,7 @@ index 6cce1f3..cfdef41 100644
            // Only fresh executions can receive a pre-provider wait receipt. A
            // persisted native input may already have provider effects to recover.
            if (isAiConnectionBusy(error) && !persistedNativeExecutionInput) {
-@@ -21716,6 +21842,8 @@ export function heartbeatService(
+@@ -21716,6 +21841,8 @@ export function heartbeatService(
        });
        const resetTaskSession =
          shouldResetTaskSessionForWake(context) || sessionConfigFreshness.reset;
@@ -5807,7 +5824,7 @@ index 6cce1f3..cfdef41 100644
        const sessionResetReason =
          sessionConfigFreshness.reasons.join("; ") || null;
        const taskSessionForRun = resetTaskSession ? null : taskSession;
-@@ -21762,6 +21890,9 @@ export function heartbeatService(
+@@ -21762,6 +21889,9 @@ export function heartbeatService(
          },
          resolveWorkspace: async () => {
            if (useIsolatedTaskDirectory && issueRef) {
@@ -5817,7 +5834,7 @@ index 6cce1f3..cfdef41 100644
              const cwd = await materializeIsolatedTaskDirectory({
                companyId: agent.companyId,
                issueId: issueRef.id,
-@@ -21779,6 +21910,7 @@ export function heartbeatService(
+@@ -21779,6 +21909,7 @@ export function heartbeatService(
                });
              }
              return resolveWorkspaceForRun(agent, context, previousSessionParams, {
@@ -5825,7 +5842,7 @@ index 6cce1f3..cfdef41 100644
                executionEnvironmentDriver: selectedEnvironmentForConfig?.driver ?? null,
                anchorWorkspace: {
                  cwd,
-@@ -21795,6 +21927,7 @@ export function heartbeatService(
+@@ -21795,6 +21926,7 @@ export function heartbeatService(
              });
            }
            if (nativeChatWorkspaceScope && !nativeChatWorkspaceScope.projectId) {
@@ -5833,7 +5850,7 @@ index 6cce1f3..cfdef41 100644
              const cwd = await materializeNativeChatTaskRoot(
                nativeChatWorkspaceScope,
              );
-@@ -21818,6 +21951,7 @@ export function heartbeatService(
+@@ -21818,6 +21950,7 @@ export function heartbeatService(
              context,
              previousSessionParams,
              {
@@ -5841,7 +5858,7 @@ index 6cce1f3..cfdef41 100644
                useProjectWorkspace:
                  requestedExecutionWorkspaceMode !== "agent_default",
                // Thread the selected environment driver so run-workspace resolution can tell a local
-@@ -21854,6 +21988,11 @@ export function heartbeatService(
+@@ -21854,6 +21987,11 @@ export function heartbeatService(
          repoRef: resolvedWorkspace.repoRef,
          additionalWorkspaces: resolvedWorkspace.additionalWorkspaces,
        } satisfies ExecutionWorkspaceInput;
@@ -5853,7 +5870,7 @@ index 6cce1f3..cfdef41 100644
        await assertGitWorktreeBaseWorkspaceReady({
          requestedExecutionWorkspaceMode,
          config: hostExecutionWorkspaceConfig,
-@@ -21957,6 +22096,12 @@ export function heartbeatService(
+@@ -21957,6 +22095,12 @@ export function heartbeatService(
            nextMetadata: latestWorkspaceConfigMetadata,
          },
        );
@@ -5866,7 +5883,7 @@ index 6cce1f3..cfdef41 100644
        const workspaceReuseProvisioningPolicy =
          resolveExecutionWorkspaceReuseProvisioningPolicy({
            requestedShouldReuseExisting,
-@@ -22381,23 +22526,34 @@ export function heartbeatService(
+@@ -22381,23 +22525,34 @@ export function heartbeatService(
        }
        await bindIssueToPersistedExecutionWorkspace(persistedExecutionWorkspace);
        const projectRepositoryPaths: string[] = [];
@@ -5913,7 +5930,7 @@ index 6cce1f3..cfdef41 100644
        }
        if (persistedExecutionWorkspace) {
          context.executionWorkspaceId = persistedExecutionWorkspace.id;
-@@ -22579,6 +22735,8 @@ export function heartbeatService(
+@@ -22579,6 +22734,8 @@ export function heartbeatService(
          catch { throw new ConfigurationIncompleteFailure("Project authentication conflicts with this agent’s managed AI connection", { configurationIncomplete: { reason: "ai_connection_incompatible", actionUrl: `/agents/${agent.id}/runtime` } }); }
        }
        const remoteExecution = realizationResult.remoteExecution;
@@ -5922,7 +5939,7 @@ index 6cce1f3..cfdef41 100644
        if (
          nativeChatWorkspaceScope &&
          (executionTarget?.kind === "remote" ||
-@@ -22930,6 +23088,8 @@ export function heartbeatService(
+@@ -22930,6 +23087,8 @@ export function heartbeatService(
          continuationSummaryBody: continuationSummary?.body ?? null,
        });
        if (sessionCompaction.rotate) {
@@ -5931,7 +5948,7 @@ index 6cce1f3..cfdef41 100644
          context.paperclipSessionHandoffMarkdown =
            sessionCompaction.handoffMarkdown;
          context.paperclipSessionRotationReason = sessionCompaction.reason;
-@@ -22956,6 +23116,8 @@ export function heartbeatService(
+@@ -22956,6 +23115,8 @@ export function heartbeatService(
        if (managedAiRuntime) {
          sessionConfigMetadata.aiCredentialIdentity = managedAiRuntime.identity;
          if (!taskSessionCredentialCompatible) {
@@ -5940,7 +5957,7 @@ index 6cce1f3..cfdef41 100644
            runtimeSessionIdForAdapter = null;
            runtimeSessionParamsForAdapter = null;
            previousSessionDisplayId = null;
-@@ -23262,7 +23424,8 @@ export function heartbeatService(
+@@ -23262,7 +23423,8 @@ export function heartbeatService(
                typeof entry[0] === "string" && typeof entry[1] === "string",
            ),
          );
@@ -5950,7 +5967,7 @@ index 6cce1f3..cfdef41 100644
            db,
            runId: run.id,
            agent: {
-@@ -24174,6 +24337,11 @@ export function heartbeatService(
+@@ -24174,6 +24336,11 @@ export function heartbeatService(
              return true;
            });
            if (!nativeSelected) return;
@@ -5962,7 +5979,7 @@ index 6cce1f3..cfdef41 100644
            controllerLease.stop();
            nativeWorkspaceSync = await prepareNativeWorkspaceSync({
              db,
-@@ -24226,7 +24394,7 @@ export function heartbeatService(
+@@ -24226,7 +24393,7 @@ export function heartbeatService(
              : { kind: "standard" as const };
          const authToken =
            nativeRuntimeResolution.kind === "legacy" &&
@@ -5971,7 +5988,7 @@ index 6cce1f3..cfdef41 100644
              ? createLocalAgentJwt(
                  agent.id,
                  agent.companyId,
-@@ -24238,7 +24406,7 @@ export function heartbeatService(
+@@ -24238,7 +24405,7 @@ export function heartbeatService(
              : null;
          if (
            nativeRuntimeResolution.kind === "legacy" &&
@@ -5980,7 +5997,7 @@ index 6cce1f3..cfdef41 100644
            !authToken
          ) {
            logger.warn(
-@@ -24252,6 +24420,12 @@ export function heartbeatService(
+@@ -24252,6 +24419,12 @@ export function heartbeatService(
            );
          }
          let adapterFinalizeOutcome: "succeeded" | "failed" | null = null;
@@ -5993,7 +6010,7 @@ index 6cce1f3..cfdef41 100644
          const inspectFinalizeWorkspaceBranch = async () => {
            const workspaceRecord = persistedExecutionWorkspace?.id
              ? await executionWorkspacesSvc.getById(
-@@ -24284,7 +24458,7 @@ export function heartbeatService(
+@@ -24284,7 +24457,7 @@ export function heartbeatService(
            let finalizeBranchMetadata: Record<string, unknown> | null = null;
            let finalizeBranchRepairMetadata: Record<string, unknown> | null =
              null;
@@ -6002,7 +6019,7 @@ index 6cce1f3..cfdef41 100644
              const branchInspection = await inspectFinalizeWorkspaceBranch();
              if (branchInspection) {
                let inspection = branchInspection.inspection;
-@@ -24454,6 +24628,9 @@ export function heartbeatService(
+@@ -24454,6 +24627,9 @@ export function heartbeatService(
                adapterType: agent.adapterType,
                executionTargetKind: executionTarget?.kind ?? "local",
                ...metadata,
@@ -6012,7 +6029,7 @@ index 6cce1f3..cfdef41 100644
                ...(finalizeBranchMetadata
                  ? { managedGitWorktreeBranch: finalizeBranchMetadata }
                  : {}),
-@@ -24617,6 +24794,7 @@ export function heartbeatService(
+@@ -24617,6 +24793,7 @@ export function heartbeatService(
                      managedGitHub: !useHostGitHub && githubSelection.configured,
                      managedAiCredentialIdentity: managedAiRuntime?.identity,
                      managedAiCredentialHome: managedAiRuntime ? String((managedAiRuntime.config.env as Record<string, unknown>).CODEX_HOME) : undefined,
@@ -6020,7 +6037,7 @@ index 6cce1f3..cfdef41 100644
                      runnerEnvironment: {
                        ...buildNativeProviderEnvironment(
                          adapterEnv,
-@@ -24712,7 +24890,11 @@ export function heartbeatService(
+@@ -24712,7 +24889,11 @@ export function heartbeatService(
              // adapters need it in their prompt, but the authoritative answers
              // remain on the interaction instead of being duplicated in the
              // heartbeat run snapshot.
@@ -6033,7 +6050,7 @@ index 6cce1f3..cfdef41 100644
                ...context,
                ...(legacyQuestionResponse
                  ? {
-@@ -24723,13 +24905,13 @@ export function heartbeatService(
+@@ -24723,13 +24904,13 @@ export function heartbeatService(
                    }
                  : {}),
              };
@@ -6049,7 +6066,7 @@ index 6cce1f3..cfdef41 100644
                logger.warn(
                  {
                    companyId: agent.companyId,
-@@ -24739,10 +24921,10 @@ export function heartbeatService(
+@@ -24739,10 +24920,10 @@ export function heartbeatService(
                  "runtime connection tools could not be delivered",
                );
              }
@@ -6063,7 +6080,7 @@ index 6cce1f3..cfdef41 100644
              });
              const runtimeToolDelivery =
                adapter.runtimeToolDelivery ?? "invocation_context";
-@@ -24754,15 +24936,15 @@ export function heartbeatService(
+@@ -24754,15 +24935,15 @@ export function heartbeatService(
                  connectionId: "paperclip-runtime-tools",
                });
              }
@@ -6083,7 +6100,7 @@ index 6cce1f3..cfdef41 100644
                db,
                agent,
                runId: run.id,
-@@ -24775,17 +24957,37 @@ export function heartbeatService(
+@@ -24775,17 +24956,36 @@ export function heartbeatService(
              }
              const guardedDispatch =
                await dispatchResolvedInteractionContinuationWithAtomicGate(
@@ -6107,7 +6124,6 @@ index 6cce1f3..cfdef41 100644
                    legacyAdapterEntered = true;
 -                  return adapter.execute({
 +                  try {
-+                  if (isPrime) primeOwnershipHeld = true;
 +                    return await adapter.execute({
                      runId: run.id,
 -                    agent,
@@ -6127,7 +6143,7 @@ index 6cce1f3..cfdef41 100644
                      executionTarget,
                      executionTransport: remoteExecution
                        ? {
-@@ -24850,12 +25052,78 @@ export function heartbeatService(
+@@ -24850,12 +25050,76 @@ export function heartbeatService(
                          startedAt: meta.startedAt,
                        });
                      },
@@ -6135,14 +6151,13 @@ index 6cce1f3..cfdef41 100644
 +                    authToken: isPrime ? undefined : authToken ?? undefined,
                    });
 +                  } finally {
-+                    unregisterPrime?.();
++                    await unregisterPrime?.();
 +                  }
                  },
                );
              if (!guardedDispatch.dispatched) return;
              adapterResult = await guardedDispatch.resultPromise;
 +            if (agent.adapterType === "prime_bff") {
-+              primeOwnershipHeld = await primeProviderRequiresHold(db, run.id);
 +              const terminal = parseObject(adapterResult.resultJson);
 +              const settlement = parseObject(terminal.settlement);
 +              if (["completed", "cancelled", "failed"].includes(String(terminal.outcome)) &&
@@ -6171,8 +6186,7 @@ index 6cce1f3..cfdef41 100644
 +              managedAiRuntime.attribution.provider !== "anthropic") {
 +            try {
 +              await managedAiRuntime.cleanup(
-+                primeOwnershipHeld ? { providerMayBeLive: true } :
-+                  nativeCredentialSettlementOpened ? { retainOnFailure: true } : undefined,
++                nativeCredentialSettlementOpened ? { retainOnFailure: true } : undefined,
 +              );
 +              managedAiRuntime = undefined;
 +              if (nativeCredentialSettlementOpened)
@@ -6207,7 +6221,7 @@ index 6cce1f3..cfdef41 100644
            }
            if (instructionSave) adapterResult.resultJson = { ...adapterResult.resultJson, instructionSave };
            adapterResult = applyWorkspaceRestoreFailure(adapterResult);
-@@ -24931,6 +25199,22 @@ export function heartbeatService(
+@@ -24931,6 +25195,22 @@ export function heartbeatService(
              await completeWorkspace();
            }
          } catch (adapterErr) {
@@ -6230,7 +6244,7 @@ index 6cce1f3..cfdef41 100644
            if (adapterErr instanceof NativeWorkspaceFinalizationBusyError
              || adapterErr instanceof NativeWorkspaceFinalizationOwnershipLostError) {
              nativeWorkspaceFinalizeScheduled = true;
-@@ -25428,6 +25712,10 @@ export function heartbeatService(
+@@ -25428,6 +25708,10 @@ export function heartbeatService(
                .returning()
                .then((rows) => rows[0] ?? null);
            }
@@ -6241,7 +6255,7 @@ index 6cce1f3..cfdef41 100644
            if (!persistedRun) {
              logger.info(
                {
-@@ -25968,6 +26256,7 @@ export function heartbeatService(
+@@ -25968,6 +26252,7 @@ export function heartbeatService(
            })
            .catch(() => null);
          const failureErrorCode =
@@ -6249,7 +6263,7 @@ index 6cce1f3..cfdef41 100644
            workspaceValidationFailure?.code ??
            configurationIncompleteFailure?.code ??
            nonRetryablePreflightFailureCode(err) ??
-@@ -26095,7 +26384,9 @@ export function heartbeatService(
+@@ -26095,7 +26380,9 @@ export function heartbeatService(
              // exhaustion. Once its durable coordinator has classified a
              // terminal failure, generic issue recovery must not create a
              // replacement retryOfRunId chain for the same provider work.
@@ -6260,7 +6274,7 @@ index 6cce1f3..cfdef41 100644
            });
            await handleIssueReviewPathDisposition(livenessRun);
  
-@@ -26149,18 +26440,26 @@ export function heartbeatService(
+@@ -26149,18 +26436,26 @@ export function heartbeatService(
          });
        }
      } catch (outerErr) {
@@ -6290,7 +6304,7 @@ index 6cce1f3..cfdef41 100644
            }).catch(() => undefined);
        } else if (outerErr instanceof StaleExecutionContinuationError) {
          // The queued continuation became obsolete before adapter dispatch.
-@@ -26223,6 +26522,7 @@ export function heartbeatService(
+@@ -26223,6 +26518,7 @@ export function heartbeatService(
            nonRetryablePreflightFailureCode(outerErr);
          const workspaceGitScanFailure = isWorkspaceGitScanError(outerErr) ? outerErr : null;
          const setupFailureErrorCode =
@@ -6298,7 +6312,7 @@ index 6cce1f3..cfdef41 100644
            workspaceGitScanFailure?.code ??
            workspaceValidationSetupFailure?.code ??
            configurationIncompleteSetupFailure?.code ??
-@@ -26366,6 +26666,7 @@ export function heartbeatService(
+@@ -26366,6 +26662,7 @@ export function heartbeatService(
            }
            await releaseIssueExecutionAndPromote(livenessRun, {
              suppressImmediateRecovery:
@@ -6306,19 +6320,17 @@ index 6cce1f3..cfdef41 100644
                readNonEmptyString(
                  parseObject(livenessRun.contextSnapshot).goalControlRequestId,
                ) !== null ||
-@@ -26403,8 +26704,35 @@ export function heartbeatService(
+@@ -26403,8 +26700,33 @@ export function heartbeatService(
        }
      } finally {
        await nativeInstructionReservation?.release().catch(error => logger.warn({ runId: run.id, err: error }, "Managed warm session preparation cleanup failed"));
 -      if (managedAiRuntime) await managedAiRuntime.cleanup().catch(() => logger.warn({ runId: run.id }, "AI connection refresh or cleanup failed"));
 +      let credentialHoldError: unknown;
-+      if (primeOwnershipHeld && primeRun)
-+        primeOwnershipHeld = await primeProviderRequiresHold(db, run.id).catch(() => true);
        let latestRun = await getRun(run.id).catch(() => null);
 +      if (managedAiRuntime) {
 +        // A thrown native dispatch does not prove the physical Codex child
 +        // stopped, even when a pid was not recorded before detachment.
-+        const retainProviderOwnership = primeOwnershipHeld || nativeSessionResumeScheduled || nativeOwnershipHeld ||
++        const retainProviderOwnership = nativeSessionResumeScheduled || nativeOwnershipHeld ||
 +          (nativeCredentialSettlementOpened && nativeDispatchStarted);
 +        try {
 +          await managedAiRuntime.cleanup(
@@ -6343,7 +6355,7 @@ index 6cce1f3..cfdef41 100644
        try {
          if (latestRun && isHeartbeatRunTerminalStatus(latestRun.status)) {
            await db
-@@ -26609,6 +26937,26 @@ export function heartbeatService(
+@@ -26609,6 +26931,26 @@ export function heartbeatService(
            logger.error({ err, runId: run.id }, "failed to promote legacy comment queue after cleanup");
          });
        }
@@ -6361,7 +6373,7 @@ index 6cce1f3..cfdef41 100644
 +              prime.providerSettlement === "settled" &&
 +              prime.governedSettlement === "settled" && prime.fenced !== "uncertain" &&
 +              (!prime.finalizationReceiptId || !!prime.finalizationAppliedAt)
-+            : !legacyAdapterEntered && !primeOwnershipHeld;
++            : !legacyAdapterEntered;
 +        if (provenPrime) await db.delete(primePhysicalWriters)
 +          .where(eq(primePhysicalWriters.runId, run.id))
 +          .catch((error) => logger.warn({ err: error, runId: run.id },
@@ -6370,7 +6382,7 @@ index 6cce1f3..cfdef41 100644
        if (
          !nativeSessionResumeScheduled &&
          !nativeWorkspaceFinalizeScheduled &&
-@@ -26626,6 +26974,7 @@ export function heartbeatService(
+@@ -26626,6 +26968,7 @@ export function heartbeatService(
          }
          await startNextQueuedRunForAgent(run.agentId);
        }
@@ -11339,10 +11351,10 @@ index 0000000..fcc6842
 +});
 diff --git 1/server/src/services/prime-broker.ts 2/server/src/services/prime-broker.ts
 new file mode 100644
-index 0000000..6e6f579
+index 0000000..cd84eac
 --- /dev/null
 +++ 2/server/src/services/prime-broker.ts
-@@ -0,0 +1,898 @@
+@@ -0,0 +1,933 @@
 +import { createHash } from "node:crypto";
 +import { arch, platform, release } from "node:os";
 +import { and, desc, eq, inArray } from "drizzle-orm";
@@ -11364,11 +11376,29 @@ index 0000000..6e6f579
 +  agentToken: string;
 +  apiBaseUrl: string;
 +}
-+const primeHostRuns = new Map<string, PrimeHostRun>();
++interface PrimeHostRunOwner extends PrimeHostRun {
++  closing: boolean;
++  providerUses: Map<AbortController, Promise<void>>;
++}
++const primeHostRuns = new Map<string, PrimeHostRunOwner>();
++function activePrimeHostRun(runId: string) {
++  const owner = primeHostRuns.get(runId);
++  return owner?.closing ? undefined : owner;
++}
++
++/** Close credential admission, then drain host use; this does not settle remote work. */
 +export function registerPrimeHostRun(runId: string, input: PrimeHostRun) {
 +  if (primeHostRuns.has(runId)) throw new Error("Prime broker host run already registered");
-+  primeHostRuns.set(runId, input);
-+  return () => { if (primeHostRuns.get(runId) === input) primeHostRuns.delete(runId); };
++  const owner: PrimeHostRunOwner = { ...input, closing: false, providerUses: new Map() };
++  primeHostRuns.set(runId, owner);
++  return async () => {
++    owner.closing = true;
++    for (const controller of owner.providerUses.keys()) controller.abort();
++    // An admitted OAuth rotation owns its separate signal. Wait for its commit
++    // or durable uncertain fence rather than cancelling credential settlement.
++    await Promise.all(owner.providerUses.values());
++    if (primeHostRuns.get(runId) === owner) primeHostRuns.delete(runId);
++  };
 +}
 +
 +/** Only the host-injected adapter closure calls this after a BFF-settled terminal receipt. */
@@ -11378,7 +11408,7 @@ index 0000000..6e6f579
 +}, fetchImpl: typeof fetch = fetch) {
 +  if (!input.terminalReceiptId || input.terminalReceiptId.length > 256 || input.operationId !== input.runId)
 +    throw new Error("Prime settled terminal receipt is required");
-+  const registered = primeHostRuns.get(input.runId);
++  const registered = activePrimeHostRun(input.runId);
 +  if (!registered) throw new Error("Prime host run has no owned actor session");
 +  await db.transaction(async (tx) => {
 +    const [row] = await tx.select().from(primeRuntimeAuthorities).where(eq(primeRuntimeAuthorities.runId, input.runId)).for("update");
@@ -11443,12 +11473,6 @@ index 0000000..6e6f579
 +  return { kind: "operation", fenced: row.fenced !== "open", provider: unresolved.some((effect) => effect.method === "provider.stream") || row.providerSettlement === "uncertain" ? "uncertain" : "settled", governedActions: unresolved.some((effect) => effect.method !== "provider.stream") || row.governedSettlement === "uncertain" ? "uncertain" : "settled", outstandingEffects: unresolved.length };
 +}
 +
-+/** Account ownership follows provider dispatch, not an unrelated governed-effect hold. */
-+export async function primeProviderRequiresHold(db: Db, runId: string): Promise<boolean> {
-+  const [row] = await db.select().from(primeRuntimeAuthorities).where(eq(primeRuntimeAuthorities.runId, runId));
-+  if (!row) return true;
-+  return (await projection(db, row)).provider !== "settled";
-+}
 +
 +async function receipts(db: Db, runId: string, requestId: string) {
 +  const rows = await db.select().from(primeBrokerReceipts).where(and(eq(primeBrokerReceipts.runId, runId), eq(primeBrokerReceipts.requestId, requestId))).orderBy(primeBrokerReceipts.sequence);
@@ -11804,7 +11828,7 @@ index 0000000..6e6f579
 +    return { stored: current!, authority, purpose: verified };
 +  }
 +
-+  async function selectedCredential(authority: PrimeRuntimeAuthority) {
++  async function selectedCredential(authority: PrimeRuntimeAuthority, registered: PrimeHostRunOwner) {
 +    let stage = "selection";
 +    try {
 +      const [agent] = await db.select({ runtimeConfig: agents.runtimeConfig }).from(agents).where(and(eq(agents.id, authority.identity.agentId), eq(agents.companyId, authority.identity.companyId)));
@@ -11814,8 +11838,8 @@ index 0000000..6e6f579
 +      if (selected.grant.id !== authority.selection.grantId || selected.connection.id !== authority.selection.connectionId)
 +        throw new Error("Selected subscription changed");
 +      stage = "credential";
-+      const registered = primeHostRuns.get(authority.identity.runId);
-+      if (!registered) throw new Error("Prime credential owner is unavailable; no fresh provider dispatch");
++      if (activePrimeHostRun(authority.identity.runId) !== registered)
++        throw new Error("Prime credential owner is unavailable; no fresh provider dispatch");
 +      return decodeSubscriptionCredential(await registered.credential.read());
 +    } catch (error) {
 +      if (error instanceof PrimeAdmissionError) throw error;
@@ -11931,7 +11955,7 @@ index 0000000..6e6f579
 +      if (targetId === authority.identity.issueId && payload.httpMethod === "PATCH" &&
 +          ["done", "blocked", "in_review", "cancelled"].includes(String(objectBody(payload.body).status)))
 +        throw new Error("Current issue finalization requires a settled Prime terminal");
-+      const registered = primeHostRuns.get(runId);
++      const registered = activePrimeHostRun(runId);
 +      if (!registered) throw new Error("Prime host actor session is unavailable");
 +      await admitDispatch(runId, requestId, authority);
 +      // The host keeps the actor JWT and destination private; the worker gets only this scoped result.
@@ -11954,28 +11978,41 @@ index 0000000..6e6f579
 +      return;
 +    }
 +    if (payload.method === "provider.catalog" || payload.method === "provider.stream") {
++      const registered = activePrimeHostRun(runId);
++      if (!registered) throw new PrimeAdmissionError("prime_subscription_owner_closed", "Prime credential owner is unavailable");
 +      const executeDeadlineAt = Date.parse(authority.executeDeadlineAt);
-+      const { token, accountId } = await selectedCredential(authority);
 +      const controller = new AbortController();
++      let releaseCredentialUse!: () => void;
++      const credentialUse = new Promise<void>((resolve) => { releaseCredentialUse = resolve; });
++      // Register before the first await: close must include selection/read races.
++      registered.providerUses.set(controller, credentialUse);
 +      ownedConnections.set(dispatchKey(runId, requestId), controller);
++      const assertCredentialOwner = () => {
++        if (registered.closing || controller.signal.aborted || activePrimeHostRun(runId) !== registered)
++          throw new PrimeAdmissionError("prime_subscription_owner_closed", "Prime credential owner is closing");
++      };
 +      try {
++        const { token, accountId } = await selectedCredential(authority, registered);
++        assertCredentialOwner();
 +        const headers = { Authorization: `Bearer ${token}`, "chatgpt-account-id": accountId, originator: "pi", "User-Agent": CODEX_USER_AGENT };
 +        if (payload.method === "provider.catalog") {
 +          let stage = "authorization";
 +          try {
 +            await admitDispatch(runId, requestId, authority);
++            assertCredentialOwner();
 +            if (Date.now() >= executeDeadlineAt) throw new Error("Prime execute authority expired");
 +            stage = "transport";
 +            let response = await fetchImpl(CATALOG_URL, { headers, signal: controller.signal });
++            assertCredentialOwner();
 +            if (response.status === 401) {
 +              stage = "refresh";
-+              const registered = primeHostRuns.get(runId);
-+              if (!registered) throw new Error("Prime managed subscription owner was lost");
++              assertCredentialOwner();
 +              const refreshed = await refreshPrimeCredential(registered, fetchImpl);
 +              if (refreshed.accountId !== accountId)
 +                throw new Error("Managed subscription refresh changed accounts");
 +              stage = "authorization";
 +              await admitDispatch(runId, requestId, authority);
++              assertCredentialOwner();
 +              if (Date.now() >= executeDeadlineAt) throw new Error("Prime execute authority expired");
 +              stage = "transport";
 +              response = await fetchImpl(CATALOG_URL, {
@@ -11983,9 +12020,11 @@ index 0000000..6e6f579
 +                signal: controller.signal,
 +              });
 +            }
++            assertCredentialOwner();
 +            if (!response.ok) throw new PrimeAdmissionError("prime_catalog_http_rejected", `Authenticated ChatGPT catalog request failed (HTTP ${response.status})`);
 +            stage = "format";
 +            const body: unknown = await response.json();
++            assertCredentialOwner();
 +            const models = body && typeof body === "object" && "models" in body ? body.models : null;
 +            if (!Array.isArray(models)) throw new PrimeAdmissionError("prime_catalog_format_failed", "Authenticated ChatGPT catalog has no model list");
 +            if (!models.some((item) => item && typeof item === "object" && "slug" in item && item.slug === authority.selection.model))
@@ -12000,10 +12039,12 @@ index 0000000..6e6f579
 +        if (payload.turnId !== authority.turnId) throw new Error("Prime turn identity mismatch");
 +        const requestBody = JSON.stringify(restrictResponseRequest(payload.request, authority));
 +        await admitDispatch(runId, requestId, authority);
++        assertCredentialOwner();
 +        if (Date.now() >= executeDeadlineAt) throw new Error("Prime execute authority expired");
 +        const response = await fetchImpl(RESPONSES_URL, { method: "POST", redirect: "manual",
 +          headers: { ...headers, "OpenAI-Beta": "responses=experimental", "content-type": "application/json", Accept: "text/event-stream" },
 +          body: requestBody, signal: controller.signal });
++        assertCredentialOwner();
 +        // A specific authenticated-origin rejection proves no model work. Proxy
 +        // 5xx, redirects and unknown response shapes do not; never replay POST.
 +        if (!response.ok) {
@@ -12067,7 +12108,13 @@ index 0000000..6e6f579
 +        const finalState = terminal ?? "uncertain";
 +        yield await settle(db, runId, requestId, finalState, providerResult(finalState, responseId, usage));
 +        return;
-+      } finally { ownedConnections.delete(dispatchKey(runId, requestId)); }
++      } finally {
++        // Also close unread/non-SSE response bodies. Remote outcome may remain unknown.
++        controller.abort();
++        ownedConnections.delete(dispatchKey(runId, requestId));
++        registered.providerUses.delete(controller);
++        releaseCredentialUse();
++      }
 +    }
 +    if (payload.method === "mcp.tools.call") {
 +      const matching = authority.mcp.tools.find((tool) => tool.connectionId === payload.connectionId && tool.name === payload.tool);
@@ -12241,6 +12288,366 @@ index 0000000..6e6f579
 +    },
 +  };
 +}
+diff --git 1/server/src/services/prime-credential-ownership.postgres.test.ts 2/server/src/services/prime-credential-ownership.postgres.test.ts
+new file mode 100644
+index 0000000..2d05612
+--- /dev/null
++++ 2/server/src/services/prime-credential-ownership.postgres.test.ts
+@@ -0,0 +1,354 @@
++import { randomUUID } from "node:crypto";
++import { chmod, mkdtemp, readdir, rm } from "node:fs/promises";
++import { tmpdir } from "node:os";
++import path from "node:path";
++import { eq } from "drizzle-orm";
++import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
++import {
++  agents, companyMemberships, companies, createDb, executionWorkspaces, heartbeatRuns,
++  issues, primeBrokerRequests, primeRuntimeAuthorities, projects, type Db,
++  type EmbeddedPostgresTestDatabase,
++} from "@paperclipai/db";
++import type { ManagedAiCredentialLifecycle } from "@paperclipai/adapter-utils";
++import type { PrimeBrokerFrame, PrimeBrokerRequest } from "@paperclipai/shared";
++import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "../__tests__/helpers/embedded-postgres.js";
++import { aiConnectionService } from "./ai-connections.js";
++import { prepareManagedAiRuntime } from "./ai-connection-runtime.js";
++import { primeBrokerService, registerPrimeHostRun } from "./prime-broker.js";
++import { issuePrimeAuthority, primeDigest } from "./prime-runtime-authority.js";
++import { legacyControllerBootId } from "./legacy-controller-lease.js";
++import { assertNoHeldPrimeWorkspace } from "./prime-workspace-safety.js";
++
++const support = await getEmbeddedPostgresTestSupport();
++const describePostgres = support.supported ? describe : describe.skip;
++if (!support.supported) console.warn(`Skipping Prime credential ownership PostgreSQL tests: ${support.reason}`);
++
++function deferred<T>() {
++  let resolve!: (value: T) => void;
++  const promise = new Promise<T>((done) => { resolve = done; });
++  return { promise, resolve };
++}
++
++// A syntactically valid, deliberately fake account token: the real managed runtime
++// verifies the account claim before admitting a Prime credential owner.
++function fixtureJwt(account: string, generation: string) {
++  return `e30.${Buffer.from(JSON.stringify({
++    exp: Math.floor(Date.now() / 1000) + 3600,
++    generation,
++    "https://api.openai.com/auth": { chatgpt_account_id: account },
++  })).toString("base64url")}.fixture`;
++}
++
++const catalogResponse = () => new Response(JSON.stringify({ models: [{ slug: "fixture-model" }] }), {
++  status: 200, headers: { "content-type": "application/json" },
++});
++const nextTick = () => new Promise<void>((resolve) => setImmediate(resolve));
++
++// The consumer must keep advancing past every receipt: an async generator
++// suspended at a yielded frame has not unwound its credential-use scope.
++async function consume(
++  generator: AsyncGenerator<PrimeBrokerFrame>,
++  onFrame?: (frame: PrimeBrokerFrame) => void,
++) {
++  const frames: PrimeBrokerFrame[] = [];
++  for await (const frame of generator) {
++    frames.push(frame);
++    onFrame?.(frame);
++  }
++  return frames;
++}
++
++describePostgres("Prime credential owner and provider settlement", () => {
++  let database: EmbeddedPostgresTestDatabase;
++  let db: Db;
++  let home: string;
++  const workspaces: string[] = [];
++
++  beforeAll(async () => {
++    home = await mkdtemp(path.join(tmpdir(), "prime-credential-home-"));
++    vi.stubEnv("PAPERCLIP_HOME", home);
++    vi.stubEnv("PAPERCLIP_INSTANCE_ID", `prime-credential-${randomUUID()}`);
++    vi.stubEnv("PAPERCLIP_PRIME_QUARANTINE_ROOTS", "[]");
++    vi.stubEnv("PAPERCLIP_DECISION_SIGNING_SECRET", "fixture-prime-decision-signing-secret-at-least-32-bytes");
++    database = await startEmbeddedPostgresTestDatabase("paperclip-prime-credential-ownership-");
++    db = createDb(database.connectionString);
++  }, 90_000);
++
++  afterAll(async () => {
++    await db?.$client.end({ timeout: 1 });
++    await database?.cleanup();
++    await Promise.all(workspaces.map((root) => rm(root, { recursive: true, force: true })));
++    if (home) {
++      const writable = async (directory: string): Promise<void> => {
++        await chmod(directory, 0o700);
++        for (const entry of await readdir(directory, { withFileTypes: true }))
++          if (entry.isDirectory()) await writable(path.join(directory, entry.name));
++      };
++      await writable(home);
++      await rm(home, { recursive: true, force: true });
++    }
++    vi.unstubAllEnvs();
++  });
++
++  async function fixture() {
++    const companyId = randomUUID(), agentId = randomUUID(), issueId = randomUUID(), runId = randomUUID();
++    const userId = `prime-owner-${randomUUID()}`;
++    const root = await mkdtemp(path.join(tmpdir(), "prime-credential-workspace-"));
++    workspaces.push(root);
++    const accountId = `fixture-account-${randomUUID()}`;
++    const binding = { provider: "openai", method: "subscription", mode: "responsible_user" } as const;
++    await db.insert(companies).values({ id: companyId, name: "Prime credential owner fixture", issuePrefix: `P${companyId.slice(0, 7)}` });
++    await db.insert(companyMemberships).values({ companyId, principalType: "user", principalId: userId, status: "active", membershipRole: "owner" });
++    await db.insert(agents).values({ id: agentId, companyId, name: "Prime fixture agent", role: "engineer",
++      adapterType: "prime_bff", adapterConfig: { promptTemplate: "Fixture instructions" },
++      runtimeConfig: { aiConnection: binding }, permissions: {} });
++    const projectId = randomUUID();
++    await db.insert(projects).values({ id: projectId, companyId, name: "Prime fixture task" });
++    await db.insert(issues).values({ id: issueId, companyId, projectId, title: "Prime fixture task",
++      status: "in_progress", assigneeAgentId: agentId });
++    const [workspace] = await db.insert(executionWorkspaces).values({ companyId, projectId, sourceIssueId: issueId,
++      mode: "shared_workspace", strategyType: "project_primary", name: "Isolated fixture workspace", cwd: root }).returning();
++    await db.insert(heartbeatRuns).values({ id: runId, companyId, agentId, responsibleUserId: userId,
++      controllerBootId: legacyControllerBootId, controllerLeaseExpiresAt: new Date(Date.now() + 3_600_000),
++      executionStage: "dispatching", runtimeMode: "legacy", status: "running" });
++    await db.update(issues).set({ checkoutRunId: runId, executionRunId: runId }).where(eq(issues.id, issueId));
++    const ai = aiConnectionService(db);
++    const account = await ai.save(companyId, userId, { provider: "openai", method: "subscription",
++      ownership: "personal", name: "Fixture account", loginSessionId: "fixture", allAgents: true, agentIds: [] },
++      JSON.stringify({ auth_mode: "chatgpt", tokens: {
++        account_id: accountId, access_token: fixtureJwt(accountId, "initial"),
++        id_token: fixtureJwt(accountId, "initial-id"), refresh_token: "fixture-refresh-initial",
++      } }));
++    const runtime = await prepareManagedAiRuntime(db, { companyId, agentId, runId, responsibleUserId: userId,
++      adapterType: "prime_bff", binding, config: { model: "fixture-model", cwd: root } });
++    const issued = await issuePrimeAuthority(db, { companyId, agentId, issueId, runId,
++      controllerId: legacyControllerBootId, responsibleUserId: userId, workspaceId: workspace.id,
++      executionWorkspaceId: workspace.id, workspaceRoot: root, prompt: "Fixture request",
++      connectorSkillInstructions: "", runtimeSkillEntries: [], timeoutSec: 300,
++      model: "fixture-model", sessionParams: null, mcpGatewayId: null, mcpAssignmentDigest: null });
++    expect(issued.authority.selection.grantId).toBe(account.grantId);
++    function request(requestId: string, payload: PrimeBrokerRequest["payload"]): PrimeBrokerRequest {
++      return { version: 2, requestId, payload, operationId: runId, authorityDigest: issued.authorityDigest };
++    }
++    const stream = (requestId: string) => request(requestId, { method: "provider.stream", turnId: runId,
++      request: { model: "fixture-model", store: false, stream: true, instructions: "Fixture instructions",
++        input: [], text: { verbosity: "low" }, include: ["reasoning.encrypted_content"],
++        tool_choice: "auto", parallel_tool_calls: true } });
++    const state = async () => {
++      const [authority] = await db.select().from(primeRuntimeAuthorities).where(eq(primeRuntimeAuthorities.runId, runId));
++      return authority;
++    };
++    return { companyId, userId, accountId, runId, root, ai, runtime, issued, request, stream, state,
++      register: (credential: ManagedAiCredentialLifecycle = runtime.managedAiCredential!) =>
++        registerPrimeHostRun(runId, { credential, agentToken: "fixture-actor", apiBaseUrl: "http://127.0.0.1:1" }),
++    };
++  }
++
++  it("closes over a pending credential read, then refuses late catalog dispatch", async () => {
++    const f = await fixture();
++    const entered = deferred<void>(), release = deferred<void>();
++    const credential: ManagedAiCredentialLifecycle = {
++      read: async () => { entered.resolve(); await release.promise; return f.runtime.managedAiCredential!.read(); },
++      refresh: (rotate) => f.runtime.managedAiCredential!.refresh(rotate),
++    };
++    const unregister = f.register(credential);
++    const sent: string[] = [];
++    const broker = primeBrokerService(db, (async (url) => { sent.push(String(url)); return catalogResponse(); }) as typeof fetch);
++    const catalog = f.request(randomUUID(), { method: "provider.catalog" });
++    const running = consume(broker.request(f.runId, f.issued.executeCapability, catalog));
++    try {
++      await entered.promise;
++      let closed = false;
++      const closing = unregister().then(() => { closed = true; });
++      await nextTick();
++      expect(closed).toBe(false);
++      release.resolve();
++      const frames = await running;
++      await closing;
++      expect(frames.at(-1)).toMatchObject({ kind: "error" });
++      expect(sent).toEqual([]);
++      expect((await f.state()).providerSettlement).toBe("settled");
++    } finally {
++      release.resolve();
++      await unregister();
++      await f.runtime.cleanup();
++    }
++  }, 90_000);
++
++  it("aborts an active provider HTTP scope, waits for unwinding, and never redispatches its duplicate", async () => {
++    const f = await fixture();
++    const pending = deferred<Response>(), dispatched = deferred<AbortSignal>();
++    const urls: string[] = [];
++    const broker = primeBrokerService(db, (async (url, init) => {
++      urls.push(String(url));
++      if (String(url).includes("/codex/models")) {
++        dispatched.resolve(init!.signal!);
++        return pending.promise;
++      }
++      throw new Error("Unexpected provider dispatch");
++    }) as typeof fetch);
++    const unregister = f.register();
++    const request = f.request(randomUUID(), { method: "provider.catalog" });
++    const running = consume(broker.request(f.runId, f.issued.executeCapability, request));
++    try {
++      const signal = await dispatched.promise;
++      expect(signal.aborted).toBe(false);
++      let closed = false;
++      const closing = unregister().then(() => { closed = true; });
++      expect(signal.aborted).toBe(true);
++      await nextTick();
++      expect(closed).toBe(false);
++      expect((await consume(broker.request(f.runId, f.issued.executeCapability, request))).at(-1))
++        .toMatchObject({ kind: "result", result: { kind: "reservation", state: "dispatching" } });
++      pending.resolve(catalogResponse());
++      expect((await running).at(-1)).toMatchObject({ kind: "error" });
++      await closing;
++      expect(urls).toHaveLength(1);
++      expect((await consume(broker.request(f.runId, f.issued.executeCapability, request))).at(-1))
++        .toMatchObject({ kind: "error" });
++      expect(urls).toHaveLength(1);
++    } finally {
++      pending.resolve(catalogResponse());
++      await unregister();
++      await f.runtime.cleanup();
++    }
++  }, 90_000);
++
++  it("lets an admitted 401 refresh commit after close without a second catalog dispatch", async () => {
++    const f = await fixture();
++    const oauthStarted = deferred<AbortSignal>(), oauthResponse = deferred<Response>();
++    const rotatedAccessToken = fixtureJwt(f.accountId, "rotated");
++    const urls: string[] = [];
++    const broker = primeBrokerService(db, (async (url, init) => {
++      urls.push(String(url));
++      if (String(url).includes("/codex/models")) return new Response("", { status: 401 });
++      if (String(url).includes("/oauth/token")) {
++        oauthStarted.resolve(init!.signal!);
++        return oauthResponse.promise;
++      }
++      throw new Error("Unexpected provider dispatch");
++    }) as typeof fetch);
++    const unregister = f.register();
++    const running = consume(broker.request(f.runId, f.issued.executeCapability,
++      f.request(randomUUID(), { method: "provider.catalog" })));
++    try {
++      const refreshSignal = await oauthStarted.promise;
++      let closed = false;
++      const closing = unregister().then(() => { closed = true; });
++      await nextTick();
++      expect(closed).toBe(false);
++      expect(refreshSignal.aborted).toBe(false);
++      oauthResponse.resolve(new Response(JSON.stringify({ access_token: rotatedAccessToken,
++        refresh_token: "fixture-refresh-rotated", expires_in: 3600 }), { status: 200,
++        headers: { "content-type": "application/json" } }));
++      expect((await running).at(-1)).toMatchObject({ kind: "error" });
++      await closing;
++      expect(urls.filter((url) => url.includes("/codex/models"))).toHaveLength(1);
++      expect(urls.filter((url) => url.includes("/oauth/token"))).toHaveLength(1);
++      const selected = await f.ai.select({ companyId: f.companyId, agentId: f.issued.authority.identity.agentId,
++        userId: f.userId, adapterType: "prime_bff", binding: { provider: "openai", method: "subscription", mode: "responsible_user" } });
++      const committed = JSON.parse(await f.ai.credential(selected));
++      expect(committed.tokens.refresh_token).toBe("fixture-refresh-rotated");
++      expect(committed.tokens.access_token).toBe(rotatedAccessToken);
++      expect((await f.state()).providerSettlement).toBe("settled");
++      const afterClose = f.request(randomUUID(), { method: "provider.catalog" });
++      expect((await consume(broker.request(f.runId, f.issued.executeCapability, afterClose))).at(-1))
++        .toMatchObject({ kind: "error" });
++      expect(urls.filter((url) => url.includes("/codex/models"))).toHaveLength(1);
++    } finally {
++      oauthResponse.resolve(new Response(JSON.stringify({ access_token: rotatedAccessToken,
++        refresh_token: "fixture-refresh-rotated", expires_in: 3600 }), { status: 200 }));
++      await unregister();
++      await f.runtime.cleanup();
++    }
++  }, 90_000);
++
++  it("keeps lost SSE outcome uncertain after account close and excludes fresh execution", async () => {
++    const f = await fixture();
++    const created = deferred<void>();
++    let cleaned = false;
++    let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
++    let streamSignal!: AbortSignal;
++    const urls: string[] = [];
++    const broker = primeBrokerService(db, (async (url, init) => {
++      urls.push(String(url));
++      if (String(url).includes("/codex/models")) return catalogResponse();
++      streamSignal = init!.signal!;
++      const body = new ReadableStream<Uint8Array>({ start(controller) { streamController = controller;
++        controller.enqueue(new TextEncoder().encode('data: {"type":"response.created","response":{"id":"fixture-provider-response"}}\n\n'));
++      } });
++      return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
++    }) as typeof fetch);
++    const unregister = f.register();
++    try {
++      const catalog = f.request(randomUUID(), { method: "provider.catalog" });
++      expect((await consume(broker.request(f.runId, f.issued.executeCapability, catalog))).at(-1))
++        .toMatchObject({ kind: "result", result: { kind: "catalog", available: true } });
++      const request = f.stream(randomUUID());
++      const running = consume(broker.request(f.runId, f.issued.executeCapability, request), (frame) => {
++        if (frame.kind === "provider_event" && frame.event.type === "response.created") created.resolve();
++      });
++      await created.promise;
++      let closed = false;
++      const closing = unregister().then(() => { closed = true; });
++      expect(streamSignal.aborted).toBe(true);
++      await nextTick();
++      expect(closed).toBe(false);
++      streamController?.error(new Error("Fixture SSE outcome lost after acceptance"));
++      expect((await running).at(-1)).toMatchObject({ kind: "result", result: { kind: "provider", state: "uncertain" } });
++      await closing;
++      expect((await f.state())).toMatchObject({ fenced: "uncertain", providerSettlement: "uncertain",
++        governedSettlement: "settled", workerSettlement: "pending" });
++      await expect(assertNoHeldPrimeWorkspace(db, null, f.root))
++        .rejects.toThrow("Workspace overlaps an unresolved Prime run");
++      expect(await consume(broker.request(f.runId, f.issued.executeCapability, request)))
++        .toContainEqual(expect.objectContaining({ kind: "result",
++          result: expect.objectContaining({ kind: "provider", state: "uncertain",
++            providerRequestId: "fixture-provider-response" }) }));
++      await expect(consume(broker.request(f.runId, f.issued.executeCapability,
++        f.request(randomUUID(), { method: "provider.catalog" })))).rejects.toThrow(/unresolved or fenced/);
++      expect(urls.filter((url) => url.includes("/codex/responses"))).toHaveLength(1);
++      // Uncertainty belongs to the model outcome, not to credential ownership:
++      // the drained host scope permits this same account to be leased anew.
++      await f.runtime.cleanup();
++      cleaned = true;
++      const successor = await prepareManagedAiRuntime(db, { companyId: f.companyId,
++        agentId: f.issued.authority.identity.agentId, responsibleUserId: f.userId,
++        adapterType: "prime_bff", binding: { provider: "openai", method: "subscription", mode: "responsible_user" },
++        config: { model: "fixture-model", cwd: f.root } });
++      await successor.cleanup();
++      expect((await f.state()).providerSettlement).toBe("uncertain");
++      await expect(assertNoHeldPrimeWorkspace(db, null, f.root))
++        .rejects.toThrow("Workspace overlaps an unresolved Prime run");
++    } finally {
++      streamController?.error(new Error("Fixture SSE scope cleanup"));
++      await unregister();
++      if (!cleaned) await f.runtime.cleanup();
++    }
++  }, 90_000);
++
++  it("seals an orphan provider reservation without replaying it or clearing its provider hold", async () => {
++    const f = await fixture();
++    const urls: string[] = [];
++    const broker = primeBrokerService(db, (async (url) => { urls.push(String(url)); return catalogResponse(); }) as typeof fetch);
++    const unregister = f.register();
++    try {
++      const request = f.stream(randomUUID());
++      await db.insert(primeBrokerRequests).values({ runId: f.runId, requestId: request.requestId,
++        method: "provider.stream", state: "dispatching", argumentsHash: primeDigest({
++          authorityDigest: request.authorityDigest, operationId: request.operationId, payload: request.payload,
++        }) });
++      // load() seals abandoned effects before allowing a status read or duplicate observation.
++      await broker.authority(f.runId, f.issued.controlCapability);
++      expect((await consume(broker.request(f.runId, f.issued.executeCapability, request))).at(-1))
++        .toMatchObject({ kind: "result", result: { kind: "reservation", state: "uncertain" } });
++      expect((await f.state())).toMatchObject({ fenced: "uncertain", providerSettlement: "uncertain" });
++      await unregister();
++      expect((await f.state()).providerSettlement).toBe("uncertain");
++      expect(urls).toEqual([]);
++    } finally {
++      await unregister();
++      await f.runtime.cleanup();
++    }
++  }, 90_000);
++});
 diff --git 1/server/src/services/prime-runtime-authority.ts 2/server/src/services/prime-runtime-authority.ts
 new file mode 100644
 index 0000000..d118f1d

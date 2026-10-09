@@ -8,9 +8,24 @@ The standalone BFF serves one operator-owned, private `stateRoot`; only one BFF 
 
 A BFF restart reconciles admitted/running/approval-wait operations as **uncertain** and retains their leases. An HTTP stream interrupted after acceptance also remains uncertain unless a matching terminal or original-owner stop proof exists. Operator observation may retrieve events or initiate reconcile only through the original signed run/control authority; endpoints are not open maintenance tools. The worker must not resume or repeat uncertain provider, MCP or issue-finalization requests. The host independently retains physical writer exclusion for unknown and settled Prime provenance: even a later non-Prime agent in another company cannot automatically write to an overlapping root.
 
-The live qualification sequence is **unresolved**, not a successful subscription run. Early fresh canaries failed at catalog startup and retained their holds. A later run authenticated the exact catalog model and native Prime accepted its session, but its first provider request returned an uncertain receipt with no response ID. The host then refused a separate scope before provider work because the earlier account owner remained unresolved. Lack of observed output, local termination or elapsed time is not settlement evidence.
+The live qualification sequence remains **unresolved**, not a successful subscription run. A later canary authenticated the exact catalog model and native Prime accepted its session, but its first provider request returned an uncertain receipt with no response ID. Its host credential-owner marker initially blocked other agents sharing the same company/OpenAI account, even though their configurations were unchanged. An explicitly authorized audit subsequently proved that one host credential lease settled and archived only its marker. Two account-only admission/cleanup cycles then succeeded with HTTP dispatch forbidden. Its provider/worker/workspace uncertainty remained unchanged.
 
-Do not create new issues/workspaces or clone credentials to evade that account fence. Preserve both account ownership and physical-writer holds. Further qualification requires original-owner settlement or a separately authorized distinct subscription; there is no automatic credential fallback. Controlled native tests confirmed that uncertain MCP cancellation retains the writer, while settled children and original approval/rejection receipts can be correlated. Those fixtures do not release any live hold.
+Do not create new issues/workspaces or clone credentials to evade an unresolved **credential** owner. The repaired host distinguishes credential-owner settlement from provider outcome; this does not weaken writer exclusion or permit replay. Controlled cancellation/approval fixtures do not release live holds.
+
+## Host credential-owner recovery
+
+The current host patch closes credential admission and drains its catalog/stream scopes before managed-account cleanup, independently of remote provider outcome. Cleanup still refuses an OAuth refresh fence or unconfirmed rotation. The `v0.1.0` source tag predates this repair; rebuild the pinned host with the current complete patch. Adapter/BFF 0.1.0, wire protocol, database schema and native runtime are unchanged by this host-only correction.
+
+A stale account-owner marker is **not** automatically removable. Any exceptional recovery requires explicit operator authorization and evidence for the individual marker:
+
+1. Correlate the exact marker with its Prime run, grant, original host PID/start identity and credential-custody contract. New markers record company, agent, run and adapter identity; older markers need independent run/service evidence. A timestamp or missing process alone is insufficient.
+2. Establish that this run used the host-only Prime credential path and that no original host credential scope can still use or rotate the account. A worker's continuing or unknown computation is not credential ownership when it never received credentials.
+3. Establish refresh settlement: no unresolved durable OAuth fence, unmatched rotated credential or unconfirmed secret commit. Preserve the fence, restricted home and account exclusion if any of this is unknown.
+4. Serialize the transition with the existing account admission gate, revalidate the exact marker bytes and owner set, and archive only that authorized marker with private evidence. Retain its restricted home. Do not sweep other owners or clear a stale admission gate speculatively.
+5. Verify account admission/cleanup without provider dispatch and verify the original provider, worker, governed-effect and host/BFF writer holds remain unchanged. Do not change run outcomes, delete authority/lease rows, edit SQLite/WAL or initiate a retry as part of credential recovery.
+
+This is a credential-only incident procedure, not a reset endpoint or general stale-lock policy. If individual attribution or refresh settlement cannot be proven, leave account admission fenced. A distinct separately authorized subscription remains an alternative, not an automatic fallback.
+
 
 ## After an unclean exit or a stale owner lock
 
