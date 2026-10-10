@@ -2,6 +2,13 @@
 
 Changes here describe the public source at a revision, not a claim that a managed live subscription run has qualified for production. Distribution readiness requires separate recorded evidence for the exact artifact and authorized environment.
 
+## Unreleased — host Codex response admission
+
+- Removed the host's MIME-only rejection of successful Codex responses, matching Prime's native client: read the body and require correlated creation/terminal events before settlement. A new, separately approved live diagnostic proved that HTTP 200 was rejected at the header gate before any provider event was read. Its exact media subtype and response body were not retained, so this does not establish that the lost body was valid SSE or settle any held request.
+- Added fixed-category provider failure-stage diagnostics without upstream bodies, arbitrary error messages or credentials. Unknown transport, malformed/non-SSE bodies and uncorrelated terminal events remain held; no retry, fallback or recovery bypass was added.
+- Two real-PostgreSQL regression cases failed before the correction; all 28 targeted host tests and compilation passed afterward. A disposable smoke using the installed compiled broker, real HTTP and isolated PostgreSQL completed correlated SSE with `text/plain` and absent Content-Type, retained a non-SSE response as uncertain, and observed duplicate requests without another provider POST. Provider responses and credentials in that smoke were fixtures; live end-to-end acceptance remains unqualified.
+- Clarified that an existing agent `cwd` alone is insufficient: the assigned issue must resolve an existing registered project workspace. The host can register an execution-workspace record but does not provision a fallback directory. Adapter/BFF npm artifacts, native runtime, protocol and schema remain unchanged; the `v0.1.0` source tag predates these host-only corrections.
+
 ## Unreleased — host credential-owner repair
 
 - Separated Prime's host credential-owner lifetime from uncertain provider/workspace outcomes. Host unregister now closes admission, aborts catalog/stream HTTP scopes and drains admitted credential use before account cleanup; an already-admitted OAuth refresh may finish its independent commit, but cannot dispatch another catalog request after closure.

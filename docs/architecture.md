@@ -30,6 +30,8 @@ The supplied patches are part of the product, not optional enhancements: `paperc
 
 Host and native catalog discovery advertise Codex client version `0.162.0`. The upstream endpoint filters models by client version: an old version may return HTTP 200 with an incomplete catalog. Keep that version aligned with the pinned model metadata; never treat a missing exact model as permission to substitute another model or bypass authenticated admission.
 
+Foreground response admission follows native Codex: a successful HTTP response must have a body, but its Content-Type label is not settlement evidence or an additional MIME gate. The broker parses bounded SSE and requires a matching `response.created` identity and terminal event. HTTP 200 with a non-SSE body, malformed stream, missing terminal or mismatched identity remains uncertain. Fixed-category diagnostics identify credential, authorization, transport, header, parsing and receipt stages without logging upstream bodies or arbitrary errors.
+
 ## Checkpoints and scope
 
 Distinguish four kinds of state:

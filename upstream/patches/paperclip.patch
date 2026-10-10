@@ -11351,10 +11351,10 @@ index 0000000..fcc6842
 +});
 diff --git 1/server/src/services/prime-broker.ts 2/server/src/services/prime-broker.ts
 new file mode 100644
-index 0000000..cd84eac
+index 0000000..274abc4
 --- /dev/null
 +++ 2/server/src/services/prime-broker.ts
-@@ -0,0 +1,933 @@
+@@ -0,0 +1,968 @@
 +import { createHash } from "node:crypto";
 +import { arch, platform, release } from "node:os";
 +import { and, desc, eq, inArray } from "drizzle-orm";
@@ -11991,6 +11991,9 @@ index 0000000..cd84eac
 +        if (registered.closing || controller.signal.aborted || activePrimeHostRun(runId) !== registered)
 +          throw new PrimeAdmissionError("prime_subscription_owner_closed", "Prime credential owner is closing");
 +      };
++      let providerStage = "credential";
++      let providerHttpStatus: number | null = null;
++      let providerResponseType: "sse" | "json" | "other" | null = null;
 +      try {
 +        const { token, accountId } = await selectedCredential(authority, registered);
 +        assertCredentialOwner();
@@ -12036,14 +12039,21 @@ index 0000000..cd84eac
 +            throw new PrimeAdmissionError(`prime_catalog_${stage}_failed`, `Authenticated ChatGPT catalog ${stage} failed`);
 +          }
 +        }
++        providerStage = "request";
 +        if (payload.turnId !== authority.turnId) throw new Error("Prime turn identity mismatch");
 +        const requestBody = JSON.stringify(restrictResponseRequest(payload.request, authority));
++        providerStage = "authorization";
 +        await admitDispatch(runId, requestId, authority);
 +        assertCredentialOwner();
 +        if (Date.now() >= executeDeadlineAt) throw new Error("Prime execute authority expired");
++        providerStage = "transport";
 +        const response = await fetchImpl(RESPONSES_URL, { method: "POST", redirect: "manual",
 +          headers: { ...headers, "OpenAI-Beta": "responses=experimental", "content-type": "application/json", Accept: "text/event-stream" },
 +          body: requestBody, signal: controller.signal });
++        providerStage = "headers";
++        providerHttpStatus = response.status;
++        providerResponseType = response.headers.get("content-type")?.includes("text/event-stream") ? "sse"
++          : response.headers.get("content-type")?.includes("application/json") ? "json" : "other";
 +        assertCredentialOwner();
 +        // A specific authenticated-origin rejection proves no model work. Proxy
 +        // 5xx, redirects and unknown response shapes do not; never replay POST.
@@ -12059,14 +12069,17 @@ index 0000000..cd84eac
 +          yield await settle(db, runId, requestId, "failed", providerResult("failed", null));
 +          return;
 +        }
-+        if (!response.body || !response.headers.get("content-type")?.includes("text/event-stream"))
-+          throw new Error("ChatGPT foreground SSE was accepted without an observable event stream");
++        // Match native Codex transport: observe the wire stream, not a MIME label.
++        // Only correlated creation/terminal receipts below can establish settlement.
++        if (!response.body)
++          throw new Error("ChatGPT foreground response has no observable body");
 +        let buffer = "";
 +        let responseId: string | null = null;
 +        let created = false;
 +        let terminal: "completed" | "failed" | null = null;
 +        let usage: Record<string, unknown> | null = null;
 +        const decoder = new TextDecoder();
++        providerStage = "stream";
 +        for await (const chunk of response.body) {
 +          buffer = (buffer + decoder.decode(chunk, { stream: true })).replace(/\r\n/g, "\n");
 +          if (buffer.length > 8_000_000) throw new Error("Provider event exceeds broker limit");
@@ -12076,20 +12089,25 @@ index 0000000..cd84eac
 +            buffer = buffer.slice(boundary + 2);
 +            const data = block.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
 +            if (data && data !== "[DONE]") {
++              providerStage = "event_json";
 +              const parsed: unknown = JSON.parse(data);
 +              if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Malformed provider SSE event");
 +              const event = parsed as Record<string, unknown>;
 +              const responseValue = event.response;
 +              const responseRecord = responseValue && typeof responseValue === "object" && !Array.isArray(responseValue) ? responseValue as Record<string, unknown> : null;
 +              if (event.type === "response.created") {
++                providerStage = "event_creation";
 +                if (created || typeof responseRecord?.id !== "string" || !responseRecord.id) throw new Error("Invalid provider response creation");
 +                created = true;
 +                responseId = responseRecord.id;
++                providerStage = "response_identity_receipt";
 +                await db.update(primeBrokerRequests).set({ providerRequestId: responseId, state: "streaming" }).where(and(eq(primeBrokerRequests.runId, runId), eq(primeBrokerRequests.requestId, requestId)));
 +              } else if (typeof responseRecord?.id === "string" && responseId && responseId !== responseRecord.id) {
++                providerStage = "event_identity";
 +                throw new Error("Mixed provider response identities");
 +              }
 +              if (event.type === "response.completed" || event.type === "response.failed" || event.type === "response.incomplete" || event.type === "response.done") {
++                providerStage = "event_terminal";
 +                if (!created || !responseRecord || responseRecord.id !== responseId || terminal
 +                  || event.type === "response.completed" && responseRecord.status !== "completed"
 +                  || event.type === "response.failed" && responseRecord.status !== "failed"
@@ -12099,15 +12117,32 @@ index 0000000..cd84eac
 +                terminal = responseRecord.status === "completed" ? "completed" : "failed";
 +                if (responseRecord.usage && typeof responseRecord.usage === "object" && !Array.isArray(responseRecord.usage)) usage = responseRecord.usage as Record<string, unknown>;
 +              }
++              providerStage = "event_receipt";
 +              yield await append(db, runId, requestId, { kind: "provider_event", event });
++              providerStage = "stream";
 +            }
 +            boundary = buffer.indexOf("\n\n");
 +          }
 +          if (terminal) break;
 +        }
 +        const finalState = terminal ?? "uncertain";
++        providerStage = "settlement";
 +        yield await settle(db, runId, requestId, finalState, providerResult(finalState, responseId, usage));
 +        return;
++      } catch (error) {
++        if (payload.method === "provider.stream") {
++          const cause = error instanceof Error ? error.cause : null;
++          const code = cause && typeof cause === "object" && "code" in cause ? cause.code : null;
++          // These are fixed categories, never upstream messages, bodies, URLs or credentials.
++          const transportCode = typeof code === "string" &&
++            /^(?:UND_ERR_(?:CONNECT_TIMEOUT|HEADERS_TIMEOUT|BODY_TIMEOUT|SOCKET)|E(?:CONNRESET|CONNREFUSED|TIMEDOUT|HOSTUNREACH|NETUNREACH|AI_AGAIN|NOTFOUND))$/.test(code)
++            ? code : null;
++          logger.warn({ runId, requestId, providerStage, httpStatus: providerHttpStatus,
++            responseType: providerResponseType, transportCode,
++            errorKind: error instanceof SyntaxError ? "syntax" : error instanceof TypeError ? "type" : "other" },
++          "Prime provider failure stage; upstream content withheld");
++        }
++        throw error;
 +      } finally {
 +        // Also close unread/non-SSE response bodies. Remote outcome may remain unknown.
 +        controller.abort();
@@ -12290,10 +12325,10 @@ index 0000000..cd84eac
 +}
 diff --git 1/server/src/services/prime-credential-ownership.postgres.test.ts 2/server/src/services/prime-credential-ownership.postgres.test.ts
 new file mode 100644
-index 0000000..2d05612
+index 0000000..f86e9a2
 --- /dev/null
 +++ 2/server/src/services/prime-credential-ownership.postgres.test.ts
-@@ -0,0 +1,354 @@
+@@ -0,0 +1,441 @@
 +import { randomUUID } from "node:crypto";
 +import { chmod, mkdtemp, readdir, rm } from "node:fs/promises";
 +import { tmpdir } from "node:os";
@@ -12314,6 +12349,7 @@ index 0000000..2d05612
 +import { issuePrimeAuthority, primeDigest } from "./prime-runtime-authority.js";
 +import { legacyControllerBootId } from "./legacy-controller-lease.js";
 +import { assertNoHeldPrimeWorkspace } from "./prime-workspace-safety.js";
++import { logger } from "../middleware/logger.js";
 +
 +const support = await getEmbeddedPostgresTestSupport();
 +const describePostgres = support.supported ? describe : describe.skip;
@@ -12622,6 +12658,92 @@ index 0000000..2d05612
 +      if (!cleaned) await f.runtime.cleanup();
 +    }
 +  }, 90_000);
++
++  it.each(["text/plain", null])("accepts correlated Codex SSE when Content-Type is %s", async (contentType) => {
++    const f = await fixture();
++    const responseId = "fixture-correlated-response";
++    const events = [
++      { type: "response.created", response: { id: responseId, status: "in_progress" } },
++      { type: "response.completed", response: { id: responseId, status: "completed", usage: { input_tokens: 2, output_tokens: 1 } } },
++    ];
++    const body = new TextEncoder().encode(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""));
++    const broker = primeBrokerService(db, (async (url) =>
++      String(url).includes("/codex/models") ? catalogResponse() : new Response(body,
++        { status: 200, headers: contentType ? { "content-type": contentType } : {} })) as typeof fetch);
++    const unregister = f.register();
++    try {
++      await consume(broker.request(f.runId, f.issued.executeCapability,
++        f.request(randomUUID(), { method: "provider.catalog" })));
++      const frames = await consume(broker.request(f.runId, f.issued.executeCapability, f.stream(randomUUID())));
++      expect(frames.filter((frame) => frame.kind === "provider_event").map((frame) => frame.event)).toEqual(events);
++      expect(frames.at(-1)).toMatchObject({ kind: "result",
++        result: { kind: "provider", state: "completed", providerRequestId: responseId,
++          usage: { input_tokens: 2, output_tokens: 1 } } });
++      expect(await f.state()).toMatchObject({ fenced: "open", providerSettlement: "settled" });
++    } finally {
++      await unregister();
++      await f.runtime.cleanup();
++    }
++  }, 90_000);
++
++  it("retains a hold when a successful HTTP response is not a correlated provider stream", async () => {
++    const f = await fixture();
++    const privateBody = "fixture-private-non-SSE-body";
++    const broker = primeBrokerService(db, (async (url) =>
++      String(url).includes("/codex/models") ? catalogResponse() : new Response(privateBody,
++        { status: 200, headers: { "content-type": "text/plain" } })) as typeof fetch);
++    const unregister = f.register();
++    try {
++      await consume(broker.request(f.runId, f.issued.executeCapability,
++        f.request(randomUUID(), { method: "provider.catalog" })));
++      const frames = await consume(broker.request(f.runId, f.issued.executeCapability, f.stream(randomUUID())));
++      expect(frames).toEqual([expect.objectContaining({ kind: "result",
++        result: { kind: "provider", state: "uncertain", providerRequestId: null, usage: null } })]);
++      expect(await f.state()).toMatchObject({ fenced: "uncertain", providerSettlement: "uncertain" });
++      expect(JSON.stringify(frames)).not.toContain(privateBody);
++    } finally {
++      await unregister();
++      await f.runtime.cleanup();
++    }
++  }, 90_000);
++
++  it.each(["transport", "malformed_event"] as const)(
++    "withholds provider secrets from %s diagnostics without releasing the unknown outcome",
++    async (failure) => {
++      const f = await fixture();
++      const secret = "fixture-private-upstream-token";
++      const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
++      let providerCalls = 0;
++      const broker = primeBrokerService(db, (async (url) => {
++        if (String(url).includes("/codex/models")) return catalogResponse();
++        providerCalls++;
++        if (failure === "transport") throw new TypeError(secret, { cause: { code: secret } });
++        return new Response(`data: ${secret}\n\n`,
++          { status: 200, headers: { "content-type": "text/event-stream" } });
++      }) as typeof fetch);
++      const unregister = f.register();
++      try {
++        await consume(broker.request(f.runId, f.issued.executeCapability,
++          f.request(randomUUID(), { method: "provider.catalog" })));
++        const request = f.stream(randomUUID());
++        const frames = await consume(broker.request(f.runId, f.issued.executeCapability, request));
++        expect(frames.at(-1)).toMatchObject({ kind: "result",
++          result: { kind: "provider", state: "uncertain", providerRequestId: null } });
++        expect((await f.state())).toMatchObject({ fenced: "uncertain", providerSettlement: "uncertain" });
++        expect(warn.mock.calls).toContainEqual([
++          expect.objectContaining({ runId: f.runId, requestId: request.requestId, transportCode: null }),
++          expect.any(String),
++        ]);
++        expect(JSON.stringify({ logs: warn.mock.calls, frames })).not.toContain(secret);
++        await consume(broker.request(f.runId, f.issued.executeCapability, request));
++        expect(providerCalls).toBe(1);
++      } finally {
++        await unregister();
++        await f.runtime.cleanup();
++        warn.mockRestore();
++      }
++    }, 90_000,
++  );
 +
 +  it("seals an orphan provider reservation without replaying it or clearing its provider hold", async () => {
 +    const f = await fixture();

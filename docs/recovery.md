@@ -12,6 +12,8 @@ The live qualification sequence remains **unresolved**, not a successful subscri
 
 Do not create new issues/workspaces or clone credentials to evade an unresolved **credential** owner. The repaired host distinguishes credential-owner settlement from provider outcome; this does not weaken writer exclusion or permit replay. Controlled cancellation/approval fixtures do not release live holds.
 
+A later, separately approved diagnostic reached an HTTP 200 provider response, then failed the host's MIME-only admission check before reading any provider events. Current source removes that additional gate and validates the actual SSE receipts, as the native client does. The lost body and exact media subtype were not retained; this is not proof of provider completion and cannot retroactively settle either that request or another held run. A stopped local worker also does not establish provider settlement. Retained BFF leases exclude the same agent or issue as well as overlapping roots; another directory is not a way to restart a held agent.
+
 ## Host credential-owner recovery
 
 The current host patch closes credential admission and drains its catalog/stream scopes before managed-account cleanup, independently of remote provider outcome. Cleanup still refuses an OAuth refresh fence or unconfirmed rotation. The `v0.1.0` source tag predates this repair; rebuild the pinned host with the current complete patch. Adapter/BFF 0.1.0, wire protocol, database schema and native runtime are unchanged by this host-only correction.
