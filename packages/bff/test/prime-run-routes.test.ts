@@ -66,7 +66,10 @@ function surface(): PrimeRunSurface {
       evidence: ["original-owner stop receipt"],
     } })),
     observe: vi.fn(async () => []),
-    reconcile: vi.fn(async () => "stopped" as const),
+    reconcile: vi.fn(async (input) => ({
+      operationId: input.operationId, outcome: "stopped" as const,
+      settlement: null, reconciliation: null,
+    })),
   };
 }
 
@@ -152,6 +155,35 @@ describe("Prime run routes", () => {
       operationId: "run-1", stopped: true, outcome: "stopped",
       settlement: { provider: "settled", worker: "stopped", descendants: "stopped",
         governedActions: "settled", evidence: ["original-owner stop receipt"] },
+    });
+  });
+  it("accepts the bounded recovery body and rejects malformed or oversized envelopes", async () => {
+    const app = new Hono();
+    const runs = surface();
+    mountPrimeRunRoutes(app, runs);
+    const path = "/internal/paperclip/prime-runs/run-1/reconcile";
+    const headers = { authorization: "Bearer control-only", "x-paperclip-run-id": "run-1",
+      "content-type": "application/json" };
+    const body = { terminalReceiptId: "original-terminal", request: {
+      version: 2, requestId: "original-put", operationId: "run-1",
+      authorityDigest: "a".repeat(64),
+      payload: { method: "paperclip.request", httpMethod: "PUT", path: "/api/issues/issue-1",
+        body: { note: "original report" } },
+    } };
+    const accepted = await app.request(path, { method: "POST", headers, body: JSON.stringify(body) });
+    expect(accepted.status).toBe(200);
+    expect(runs.reconcile).toHaveBeenCalledWith({
+      bearerToken: "control-only", headerRunId: "run-1", operationId: "run-1", recovery: body,
+    });
+    const malformed = await app.request(path, { method: "POST", headers, body: "{" });
+    expect(malformed.status).toBe(400);
+    const oversized = await app.request(path, { method: "POST", headers,
+      body: JSON.stringify({ ...body, noise: "a".repeat(16 * 1024 * 1024) }) });
+    expect(oversized.status).toBe(413);
+    const noBody = await app.request(path, { method: "POST", headers });
+    expect(noBody.status).toBe(200);
+    expect(runs.reconcile).toHaveBeenLastCalledWith({
+      bearerToken: "control-only", headerRunId: "run-1", operationId: "run-1",
     });
   });
 });

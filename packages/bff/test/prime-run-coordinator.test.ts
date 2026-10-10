@@ -13,6 +13,11 @@ import type {
   PrimeContainedWorker,
 } from "../src/prime-runs/prime-run-port.js";
 import { PrimeRunRepository } from "../src/prime-runs/prime-run-repository.js";
+import {
+  PrimeRestrictedIpcDispatcher,
+  primeRestrictedIpcDigest,
+  type PrimeRestrictedIpcRequest,
+} from "../src/prime-runs/prime-restricted-ipc.js";
 import { openDatabase } from "../src/store/database.js";
 import { finalAuthority, launch } from "./prime-test-authority.js";
 
@@ -311,7 +316,8 @@ describe("durable Prime operation coordinator", () => {
         headerRunId: "run-1",
         operationId: "run-1",
       }),
-    ).resolves.toBe("uncertain");
+    ).resolves.toEqual({ operationId: "run-1", outcome: "uncertain",
+      settlement: null, reconciliation: null });
     await expect(
       restarted.cancel({ bearerToken: "control-only", headerRunId: "run-1", operationId: "run-1" }),
     ).resolves.toEqual({ outcome: "uncertain", settlement: null });
@@ -370,6 +376,196 @@ describe("durable Prime operation coordinator", () => {
     });
     await expect(coordinator.shutdown()).rejects.toThrow("control capability is unavailable");
     expect(cancel).toHaveBeenCalledWith("run-1");
+    db.close();
+  });
+
+  it("recovers only the original HTTP403 PUT via an authenticated durable negative proof, then hands off", async () => {
+    const calls: string[] = [];
+    const { root, db, repository, controlStore, verifier: identity } = await setup([]);
+    const req = request();
+    const report: PrimeRestrictedIpcRequest = {
+      version: 2, authorityDigest: req.authorityDigest, operationId: req.operationId,
+      requestId: "original-report-put",
+      payload: { method: "paperclip.request", httpMethod: "PUT",
+        path: "/api/issues/issue-1", body: { report: "exact original bytes" } },
+    };
+    const reportDigest = primeRestrictedIpcDigest(report);
+    let handoffAvailable = false;
+    let mismatchedProof = true;
+    identity.broker = async function* (_runId, token, raw) {
+      const observation = raw as { requestId: string; payload: { method: string } };
+      calls.push(`${token}:${observation.payload.method}`);
+      if (observation.payload.method === "paperclip.request")
+        throw new Error("Paperclip broker rejected this operation: HTTP403 before admission");
+      if (observation.payload.method === "operation.reconcile_worker" && !handoffAvailable)
+        throw new Error("Host handoff unavailable");
+      const result = observation.payload.method === "effect.non_admission"
+        ? { kind: "non_admission", state: "not_admitted", operationId: req.operationId,
+          runId: req.identity.runId, authorityDigest: req.authorityDigest,
+          targetRequestId: report.requestId,
+          targetRequestDigest: mismatchedProof ? "b".repeat(64) : reportDigest,
+          targetMethod: "paperclip.request", fence: "stopped",
+          proofRequestId: observation.requestId }
+        : observation.payload.method === "operation.reconcile_worker"
+          ? { kind: "worker_reconciliation", state: "settled", operationId: req.operationId,
+            runId: req.identity.runId, authorityDigest: req.authorityDigest,
+            terminalReceiptId: `${req.operationId}:terminal`, terminalDigest: "f".repeat(64),
+            worker: "stopped", descendants: "stopped", proofRequestId: observation.requestId }
+          : { kind: "operation", fenced: true, provider: "settled",
+            governedActions: "settled", outstandingEffects: 0 };
+      yield { version: 2, requestId: observation.requestId, sequence: 0, kind: "result", result };
+    };
+    const native: PrimeContainedWorker = {
+      async *execute(original, _signal, broker) {
+        yield accepted(original);
+        const dispatcher = new PrimeRestrictedIpcDispatcher(
+          { ...original.authority, authorityDigest: original.authorityDigest },
+          { broker: (envelope, purpose) => broker(envelope, purpose) }, repository,
+        );
+        expect(await dispatcher.dispatch(report)).toMatchObject([
+          { kind: "error", error: { code: "broker_outcome_uncertain" } },
+        ]);
+        yield { ...terminal(original, uncertain), settlement: {
+          ...uncertain, provider: "settled" as const,
+        } };
+      },
+      cancel: vi.fn(async () => "not_found" as const),
+      reconcile: vi.fn(async () => "not_found" as const),
+    };
+    const coordinator = new PrimeRunCoordinator(identity, native, repository, undefined, controlStore);
+    await collect(await coordinator.start(start(req)));
+    const originalTerminal = repository.replay(req.operationId).at(-1);
+    const originalRows = db.prepare(`SELECT request_digest, state, response_json FROM prime_ipc_effects
+      WHERE operation_id = ? AND request_id = ?`).get(req.operationId, report.requestId);
+    const originalOperation = db.prepare(`SELECT terminal_json, status, checkpoint, last_sequence
+      FROM prime_run_operations WHERE operation_id = ?`).get(req.operationId);
+    expect(repository.unsettledEffectCount(req.operationId)).toBe(1);
+    expect(await coordinator.reconcile({ bearerToken: "control-only",
+      headerRunId: req.identity.runId, operationId: req.operationId }))
+      .toMatchObject({ outcome: "uncertain", reconciliation: null });
+    await expect(coordinator.reconcile({ bearerToken: "execute-only",
+      headerRunId: req.identity.runId, operationId: req.operationId,
+      recovery: { terminalReceiptId: originalTerminal!.receiptId, request: report } }))
+      .rejects.toMatchObject({ kind: "unauthorized" });
+    const recovery = { terminalReceiptId: originalTerminal!.receiptId, request: report };
+    const expired = vi.spyOn(Date, "now").mockReturnValue(Date.parse(req.authority.controlDeadlineAt) + 1);
+    try {
+      await expect(coordinator.reconcile({ bearerToken: "control-only",
+        headerRunId: req.identity.runId, operationId: req.operationId, recovery }))
+        .rejects.toMatchObject({ kind: "unauthorized" });
+    } finally { expired.mockRestore(); }
+    await expect(coordinator.reconcile({ bearerToken: "control-only",
+      headerRunId: req.identity.runId, operationId: req.operationId,
+      recovery: { ...recovery, request: { ...report,
+        payload: { ...report.payload, body: { report: "changed" } } } } }))
+      .rejects.toMatchObject({ kind: "conflict" });
+    expect(await coordinator.reconcile({ bearerToken: "control-only",
+      headerRunId: req.identity.runId, operationId: req.operationId, recovery }))
+      .toMatchObject({ outcome: "uncertain", reconciliation: null });
+    expect(db.prepare("SELECT operation_id FROM prime_writer_leases WHERE operation_id = ?")
+      .get(req.operationId)).toEqual({ operation_id: req.operationId });
+    mismatchedProof = false;
+    const pending = await coordinator.reconcile({ bearerToken: "control-only",
+      headerRunId: req.identity.runId, operationId: req.operationId, recovery });
+    expect(pending).toMatchObject({ outcome: "uncertain",
+      settlement: { provider: "settled", worker: "stopped", descendants: "stopped",
+        governedActions: "settled" },
+      reconciliation: { originalTerminalReceiptId: originalTerminal!.receiptId,
+        originalRequestId: report.requestId, originalRequestDigest: reportDigest,
+        authorityDigest: req.authorityDigest, hostHandoff: null,
+        nonAdmission: { kind: "non_admission", state: "not_admitted" } } });
+    expect(db.prepare("SELECT operation_id FROM prime_writer_leases WHERE operation_id = ?")
+      .get(req.operationId)).toBeUndefined();
+    expect(repository.replay(req.operationId).at(-1)).toEqual(originalTerminal);
+    expect(db.prepare(`SELECT request_digest, state, response_json FROM prime_ipc_effects
+      WHERE operation_id = ? AND request_id = ?`).get(req.operationId, report.requestId))
+      .toEqual(originalRows);
+    expect(db.prepare(`SELECT terminal_json, status, checkpoint, last_sequence
+      FROM prime_run_operations WHERE operation_id = ?`).get(req.operationId))
+      .toEqual(originalOperation);
+    db.close();
+    const reopened = openDatabase(join(root, "state.sqlite"));
+    const durable = new PrimeRunRepository(reopened);
+    const restarted = new PrimeRunCoordinator(identity, native, durable, undefined, controlStore);
+    expect(durable.reconciliation(req.operationId)).toEqual(pending.reconciliation);
+    handoffAvailable = true;
+    const settled = await restarted.reconcile({ bearerToken: "control-only",
+      headerRunId: req.identity.runId, operationId: req.operationId });
+    expect(settled).toMatchObject({ outcome: "stopped",
+      reconciliation: { receiptId: pending.reconciliation!.receiptId,
+        hostHandoff: { kind: "worker_reconciliation", terminalDigest: "f".repeat(64) } } });
+    expect(await restarted.reconcile({ bearerToken: "control-only",
+      headerRunId: req.identity.runId, operationId: req.operationId, recovery }))
+      .toEqual(settled);
+    await expect(restarted.reconcile({ bearerToken: "control-only",
+      headerRunId: req.identity.runId, operationId: req.operationId,
+      recovery: { terminalReceiptId: "forged-terminal", request: report } }))
+      .rejects.toMatchObject({ kind: "conflict" });
+    expect(calls.filter((call) => call.endsWith(":effect.non_admission"))).toHaveLength(2);
+    expect(calls.filter((call) => call.endsWith(":paperclip.request"))).toHaveLength(1);
+    reopened.close();
+  });
+
+  it("rejects a second terminal even with a fresh receipt ID and higher sequence", async () => {
+    const { db, repository } = await setup([]);
+    const original = request();
+    repository.admit(original);
+    repository.append(original, accepted(original));
+    const first = terminal(original, uncertain) as Extract<PrimeRunEvent, { type: "terminal" }>;
+    repository.append(original, first);
+    const before = repository.replay(original.operationId);
+    expect(() => repository.append(original, { ...first, sequence: 2,
+      receiptId: "replacement-terminal",
+      session: { ...first.session, lastReceiptId: "replacement-terminal" } }))
+      .toThrow("terminal is immutable");
+    expect(repository.replay(original.operationId)).toEqual(before);
+    db.close();
+  });
+
+  it("requires original stopped dimensions, the sole matching uncertain row, and its own held lease", async () => {
+    const { db, repository } = await setup([]);
+    const req = request();
+    const another = request("other", "/other", { agentId: "agent-2", issueId: "issue-2" });
+    repository.admit(req);
+    repository.admit(another);
+    repository.append(req, accepted(req));
+    const uncertainTerminal = {
+      ...(terminal(req, uncertain) as Extract<PrimeRunEvent, { type: "terminal" }>),
+      settlement: { ...uncertain, provider: "settled" as const },
+    };
+    repository.append(req, uncertainTerminal);
+    const digest = "c".repeat(64);
+    const target = "original-report-put";
+    const error = [{ version: 2 as const, requestId: target, sequence: 0,
+      kind: "error" as const, error: { code: "broker_outcome_uncertain", message: "HTTP403" } }];
+    repository.reserve(req.operationId, target, digest);
+    repository.markUncertain(req.operationId, target, digest, error);
+    const candidate = repository.reconciliationCandidate(req.operationId);
+    const proof = { kind: "non_admission" as const, state: "not_admitted" as const,
+      operationId: req.operationId, runId: req.identity.runId, authorityDigest: req.authorityDigest,
+      targetRequestId: target, targetRequestDigest: digest, targetMethod: "paperclip.request" as const,
+      fence: "stopped" as const, proofRequestId: "durable-proof" };
+    const input = { operationId: req.operationId, terminalReceiptId: uncertainTerminal.receiptId,
+      terminalDigest: candidate.terminalDigest, requestId: target, requestDigest: digest, proof };
+    repository.reserve(req.operationId, "other-unresolved", "d".repeat(64));
+    expect(() => repository.persistReconciliation(input)).toThrow("another unresolved effect");
+    expect(repository.reconciliation(req.operationId)).toBeNull();
+    repository.finalize(req.operationId, "other-unresolved", "d".repeat(64), [
+      { version: 2, requestId: "other-unresolved", sequence: 0, kind: "error",
+        error: { code: "not_executed", message: "no execution" } },
+    ]);
+    expect(() => repository.persistReconciliation({ ...input,
+      proof: { ...proof, targetRequestDigest: "e".repeat(64) } })).toThrow("differs");
+    const receipt = repository.persistReconciliation(input);
+    expect(repository.persistReconciliation(input)).toEqual(receipt);
+    expect(() => repository.persistReconciliation({ ...input, proof: {
+      ...proof, proofRequestId: "conflicting-proof",
+    } })).toThrow("conflicts");
+    expect(db.prepare("SELECT operation_id FROM prime_writer_leases WHERE operation_id = ?")
+      .get(another.operationId)).toEqual({ operation_id: another.operationId });
+    repository.reconcileStartupOrphans();
+    expect(() => repository.reconciliationCandidate(another.operationId))
+      .toThrow("Original terminal does not prove stopped worker");
     db.close();
   });
 

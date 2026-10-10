@@ -150,6 +150,12 @@ export function mountPrimeRunRoutes(app: Hono, surface: PrimeRunSurface): void {
     }
   });
 
+  app.use("/internal/paperclip/prime-runs/:operationId/reconcile", bodyLimit({
+    maxSize: MAX_BODY_BYTES,
+    onError: (c) =>
+      c.json({ error: "payload_too_large", message: "Prime recovery envelope is too large" }, 413),
+  }));
+
   app.post("/internal/paperclip/prime-runs/:operationId/reconcile", async (c) => {
     const token = bearer(c.req.header("authorization"));
     const headerRunId = c.req.header("x-paperclip-run-id")?.trim();
@@ -158,15 +164,37 @@ export function mountPrimeRunRoutes(app: Hono, surface: PrimeRunSurface): void {
         { error: "unauthorized", message: "Signed Paperclip run identity required" },
         401,
       );
+    const declaredLength = Number(c.req.header("content-length") ?? "0");
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES)
+      return c.json({ error: "payload_too_large", message: "Prime recovery envelope is too large" }, 413);
     try {
-      const outcome = await surface.reconcile({
+      const text = await c.req.text();
+      if (Buffer.byteLength(text) > MAX_BODY_BYTES)
+        return c.json({ error: "payload_too_large", message: "Prime recovery envelope is too large" }, 413);
+      let recovery: { terminalReceiptId: string; request: unknown } | undefined;
+      if (text.trim()) {
+        if (!/^application\/json(?:\s*;|$)/i.test(c.req.header("content-type") ?? ""))
+          return c.json({ error: "unsupported_media_type", message: "Recovery body must be JSON" }, 415);
+        let body: unknown;
+        try { body = JSON.parse(text); }
+        catch { throw new PrimeRunBoundaryError("invalid", "Recovery body must be valid JSON"); }
+        if (!body || typeof body !== "object" || Array.isArray(body) ||
+          Object.keys(body).length !== 2 || !Object.hasOwn(body, "terminalReceiptId") ||
+          !Object.hasOwn(body, "request") ||
+          typeof (body as Record<string, unknown>).terminalReceiptId !== "string" ||
+          !(body as Record<string, unknown>).terminalReceiptId)
+          throw new PrimeRunBoundaryError("invalid", "Original terminal and request envelope required");
+        recovery = body as { terminalReceiptId: string; request: unknown };
+      }
+      const result = await surface.reconcile({
         bearerToken: token,
         headerRunId,
         operationId: c.req.param("operationId"),
+        ...(recovery === undefined ? {} : { recovery }),
       });
       return c.json(
-        { stopped: outcome === "stopped", outcome },
-        outcome === "uncertain" ? 503 : 200,
+        { stopped: result.outcome === "stopped", ...result },
+        result.outcome === "uncertain" ? 503 : 200,
       );
     } catch (error) {
       return errorResponse(error);

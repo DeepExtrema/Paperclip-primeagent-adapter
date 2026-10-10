@@ -20,6 +20,8 @@ A patched Paperclip host at the exact pin is required: a stock external-adapter 
 
 The BFF's state directory is distinct from the host PostgreSQL and project workspace. It has its own schema namespace (`standalone-prime-v1`), SQLite WAL sidecars, control secret, owner lock, receipts and immutable native checkpoints. The host retains its own authority, broker requests/receipts and physical writer records. Both sides must agree on identity and actual correlated settlement; a BFF process exit or an HTTP response alone cannot release host writer exclusion.
 
+Standalone schema 32 adds append-only post-terminal reconciliation and host-handoff records. Original failed terminals and uncertain IPC responses remain immutable. The control-only host methods `effect.non_admission` and `operation.reconcile_worker` do not dispatch worker effects; their exact proof, lease-release and separate issue-admission requirements are documented in [recovery](recovery.md#proven-non-admission-after-a-terminal).
+
 ## Actual native execution
 
 The BFF launches `prime-agent --mode acp --managed-manifest /run/prime/manifest.json` under `/usr/bin/bwrap`, with a read-only pinned native runtime at `/opt/paperclip/runtime` and a prebuilt Python at `/opt/paperclip/runtime/kernel-env/bin/python`. It starts with an empty environment, private `/home/prime` and `/tmp`, an isolated network namespace, only the assigned writable workspace, assigned read-only skill/resource mounts, and a restricted IPC socket. Managed native patches disable installer fallback, ambient extensions/discovery and privileged outer Git capture; project code/Git execution occurs inside the contained Python kernel. The harness keeps root, child and compaction route locked to the host's exact selected subscription model; max child depth 2 and max children created 4. These are source contracts; source checks alone do not establish a successful live provider or child-run qualification.
@@ -32,6 +34,8 @@ Host and native catalog discovery advertise Codex client version `0.162.0`. The 
 
 Foreground response admission follows native Codex: a successful HTTP response must have a body, but its Content-Type label is not settlement evidence or an additional MIME gate. The broker parses bounded SSE and requires a matching `response.created` identity and terminal event. HTTP 200 with a non-SSE body, malformed stream, missing terminal or mismatched identity remains uncertain. Fixed-category diagnostics identify credential, authorization, transport, header, parsing and receipt stages without logging upstream bodies or arbitrary errors.
 
+Each effect still checks the immutable authorization generations. GitHub's refresh-only `accessRevision` and `lastAccessRefreshAt` are excluded from the grant/tools projection; repository and installation content, status/revocation, policy, credential references and unknown tenant fields remain pinned. The GitHub metadata writer retains its own refresh/CAS fields unchanged.
+
 ## Checkpoints and scope
 
 Distinguish four kinds of state:
@@ -42,6 +46,8 @@ Distinguish four kinds of state:
 4. **Execution authority:** the host/BFF journals, selected connection, effects, settlement and physical writer exclusion. A copied transcript alone is not execution authority.
 
 A continuation requires the same company, agent, issue, execution workspace, canonical root, session namespace, connection, model and earlier completed/settled BFF receipt. The BFF verifies stored checkpoint metadata and content digest before staging a private per-run writable copy. The native session loader rejects missing, torn or mismatched sessions; there is **no** permissive repair, automatic reset, rotation or speculative cell replay. An uncertain/interrupted run must not turn into a clean new session simply because the previous worker disappeared.
+
+A task bookkeeping row containing only host fingerprints and credential-identity metadata is not a native checkpoint. The host uses the adapter's already-decoded native session when enforcing the no-reset rule; a real saved native session remains protected. This distinction neither releases a held writer nor manufactures a checkpoint.
 
 ## Effects, accounting and issue disposition
 

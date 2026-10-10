@@ -44,6 +44,33 @@ export interface PrimeRestrictedIpcRequest {
   requestId: string;
   payload: PrimeRestrictedIpcPayload;
 }
+
+/** Host-only observations: these are never admitted by the worker IPC request parser. */
+export interface PrimeNonAdmissionProof {
+  kind: "non_admission";
+  state: "not_admitted";
+  operationId: string;
+  runId: string;
+  authorityDigest: string;
+  targetRequestId: string;
+  targetRequestDigest: string;
+  targetMethod: "paperclip.request";
+  fence: "stopped";
+  proofRequestId: string;
+}
+
+export interface PrimeWorkerReconciliationProof {
+  kind: "worker_reconciliation";
+  state: "settled";
+  operationId: string;
+  runId: string;
+  authorityDigest: string;
+  terminalReceiptId: string;
+  terminalDigest: string;
+  worker: "stopped";
+  descendants: "stopped";
+  proofRequestId: string;
+}
 export type PrimeRestrictedIpcResponse =
   | {
       version: 2;
@@ -121,6 +148,10 @@ function canonical(value: unknown): string {
       .map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`)
       .join(",")}}`;
   return JSON.stringify(value);
+}
+
+export function primeRestrictedIpcDigest(request: PrimeRestrictedIpcRequest): string {
+  return createHash("sha256").update(canonical(request)).digest("hex");
 }
 
 export function parsePrimeRestrictedIpcRequest(value: unknown): PrimeRestrictedIpcRequest {
@@ -343,6 +374,32 @@ export function parsePrimeRestrictedIpcResponse(
       if (!["blocked", "in_review", "done"].includes(String(result.status)) ||
         typeof result.summary !== "string" || result.state !== "recorded")
         throw new Error("Paperclip finalization receipt invalid");
+    } else if (result.kind === "non_admission") {
+      exact(result, ["kind", "state", "operationId", "runId", "authorityDigest",
+        "targetRequestId", "targetRequestDigest", "targetMethod", "fence", "proofRequestId"],
+      "non-admission proof");
+      if (result.state !== "not_admitted" || result.targetMethod !== "paperclip.request" ||
+        result.fence !== "stopped")
+        throw new Error("Paperclip non-admission proof invalid");
+      identifier(result.operationId, "proof operation");
+      identifier(result.runId, "proof run");
+      identifier(result.targetRequestId, "proof target");
+      identifier(result.proofRequestId, "proof request");
+      digest(result.authorityDigest, "proof authority");
+      digest(result.targetRequestDigest, "proof target digest");
+    } else if (result.kind === "worker_reconciliation") {
+      exact(result, ["kind", "state", "operationId", "runId", "authorityDigest",
+        "terminalReceiptId", "terminalDigest", "worker", "descendants", "proofRequestId"],
+      "worker reconciliation proof");
+      if (result.state !== "settled" || result.worker !== "stopped" ||
+        result.descendants !== "stopped")
+        throw new Error("Paperclip worker reconciliation proof invalid");
+      identifier(result.operationId, "proof operation");
+      identifier(result.runId, "proof run");
+      identifier(result.terminalReceiptId, "proof terminal");
+      identifier(result.proofRequestId, "proof request");
+      digest(result.authorityDigest, "proof authority");
+      digest(result.terminalDigest, "proof terminal digest");
     } else if (result.kind === "operation") {
       exact(
         result,
@@ -509,7 +566,7 @@ export class PrimeRestrictedIpcDispatcher {
     if (payload.method === "paperclip.finish" && this.recordedFinalization !== null &&
       !this.store.ownsRequest(request.operationId, request.requestId))
       throw new Error("Prime operation already recorded an immutable finalization intent");
-    const requestDigest = createHash("sha256").update(canonical(request)).digest("hex");
+    const requestDigest = primeRestrictedIpcDigest(request);
     const inFlight = this.inflight.get(request.requestId);
     if (inFlight && inFlight.digest !== requestDigest)
       throw new Error("restricted IPC request ID reused with different arguments");

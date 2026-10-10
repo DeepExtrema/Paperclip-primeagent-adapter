@@ -81,3 +81,27 @@ export const PRIME_NATIVE_SESSION_MIGRATION = {
       ON prime_writer_leases (company_id, issue_id) WHERE writer_kind = 'paperclip_prime';
   `,
 } as const;
+
+/** Append-only local proof and independent append-only host handoff. */
+export const PRIME_RECONCILIATION_MIGRATION = {
+  version: 32,
+  sql: `
+    CREATE TABLE prime_run_reconciliations (
+      operation_id TEXT PRIMARY KEY REFERENCES prime_run_operations(operation_id),
+      receipt_id TEXT NOT NULL UNIQUE,
+      original_terminal_receipt_id TEXT NOT NULL,
+      original_terminal_digest TEXT NOT NULL,
+      original_request_id TEXT NOT NULL,
+      original_request_digest TEXT NOT NULL,
+      authority_digest TEXT NOT NULL,
+      receipt_json TEXT NOT NULL CHECK (json_valid(receipt_json)),
+      created_at TEXT NOT NULL,
+      UNIQUE (operation_id, original_request_id)
+    );
+    CREATE TABLE prime_run_reconciliation_handoffs (
+      operation_id TEXT PRIMARY KEY REFERENCES prime_run_reconciliations(operation_id),
+      proof_json TEXT NOT NULL CHECK (json_valid(proof_json)),
+      created_at TEXT NOT NULL
+    );
+  `,
+} as const;

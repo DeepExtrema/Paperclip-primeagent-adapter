@@ -44,14 +44,49 @@ describe("standalone Prime state isolation", () => {
     const first = openDatabase(path);
     expect(first.pragma("foreign_keys", { simple: true })).toBe(1);
     expect(first.prepare("SELECT version FROM prime_schema_version WHERE namespace = ?")
-      .get("standalone-prime-v1")).toEqual({ version: 31 });
+      .get("standalone-prime-v1")).toEqual({ version: 32 });
     expect(first.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'prime_run_operations'")
       .get()).toEqual({ name: "prime_run_operations" });
+    expect(first.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'
+      AND name = 'prime_run_reconciliations'`).get())
+      .toEqual({ name: "prime_run_reconciliations" });
+    expect(first.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'
+      AND name = 'prime_run_reconciliation_handoffs'`).get())
+      .toEqual({ name: "prime_run_reconciliation_handoffs" });
     first.close();
     const reopened = openDatabase(path);
     expect(reopened.prepare("SELECT version FROM prime_schema_version WHERE namespace = ?")
-      .get("standalone-prime-v1")).toEqual({ version: 31 });
+      .get("standalone-prime-v1")).toEqual({ version: 32 });
     reopened.close();
+  });
+
+  it("upgrades a retained v31 database without changing its original IPC receipts", () => {
+    const path = join(freshRoot(), "prime-runs.sqlite");
+    const existing = openDatabase(path);
+    existing.exec(`INSERT INTO prime_run_operations
+      (operation_id, company_id, agent_id, issue_id, run_id, turn_id, workspace_id,
+       execution_workspace_id, workspace_root, request_digest, request_json, status,
+       created_at, updated_at)
+      VALUES ('prior', 'company', 'agent', 'issue', 'run', 'turn', 'workspace',
+        'execution', '/prior', 'digest', NULL, 'uncertain', '2026-01-01', '2026-01-01');
+      INSERT INTO prime_ipc_effects
+      (operation_id, request_id, request_digest, state, response_json, created_at, updated_at)
+      VALUES ('prior', 'original', 'original-digest', 'uncertain',
+        '[{"kind":"error","message":"original"}]', '2026-01-01', '2026-01-01');
+      DROP TABLE prime_run_reconciliation_handoffs;
+      DROP TABLE prime_run_reconciliations;
+      UPDATE prime_schema_version SET version = 31 WHERE namespace = 'standalone-prime-v1';`);
+    const before = existing.prepare(`SELECT request_digest, state, response_json
+      FROM prime_ipc_effects WHERE operation_id = 'prior'`).get();
+    existing.close();
+    const upgraded = openDatabase(path);
+    expect(upgraded.prepare("SELECT version FROM prime_schema_version WHERE namespace = ?")
+      .get("standalone-prime-v1")).toEqual({ version: 32 });
+    expect(upgraded.prepare(`SELECT request_digest, state, response_json
+      FROM prime_ipc_effects WHERE operation_id = 'prior'`).get()).toEqual(before);
+    expect(upgraded.prepare("SELECT count(*) AS count FROM prime_run_reconciliations").get())
+      .toEqual({ count: 0 });
+    upgraded.close();
   });
 
   it("never follows a SQLite file or WAL symlink into another state store", () => {

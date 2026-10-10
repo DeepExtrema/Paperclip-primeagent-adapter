@@ -1,7 +1,7 @@
 import { closeSync, lstatSync, openSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import Database, { type Database as DatabaseType } from "better-sqlite3";
-import { PRIME_IPC_MIGRATION, PRIME_NATIVE_SESSION_MIGRATION, PRIME_RUN_MIGRATION } from "./prime-run-migration.js";
+import { PRIME_IPC_MIGRATION, PRIME_NATIVE_SESSION_MIGRATION, PRIME_RECONCILIATION_MIGRATION, PRIME_RUN_MIGRATION } from "./prime-run-migration.js";
 
 export type { DatabaseType };
 
@@ -34,7 +34,7 @@ export function openDatabase(path: string): DatabaseType {
       namespace TEXT PRIMARY KEY CHECK (namespace = 'standalone-prime-v1'),
       version INTEGER NOT NULL
     )`);
-    const migrations = [PRIME_RUN_MIGRATION, PRIME_IPC_MIGRATION, PRIME_NATIVE_SESSION_MIGRATION];
+    const migrations = [PRIME_RUN_MIGRATION, PRIME_IPC_MIGRATION, PRIME_NATIVE_SESSION_MIGRATION, PRIME_RECONCILIATION_MIGRATION];
     const apply = db.transaction(() => {
       const row = db.prepare("SELECT version FROM prime_schema_version WHERE namespace = ?")
         .get("standalone-prime-v1") as { version: number } | undefined;

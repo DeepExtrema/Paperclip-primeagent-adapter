@@ -3,6 +3,10 @@ import type { PrimeRunEvent,
 PrimeRunIdentity,
 PrimeRunRequest,
 PrimeSettlement, } from "@deepextrema/paperclip-primeagent-adapter"
+import type {
+  PrimeNonAdmissionProof,
+  PrimeWorkerReconciliationProof,
+} from "./prime-restricted-ipc.js";
 
 
 /** Managed input aliases below the writable workspace must resolve to the same
@@ -89,6 +93,27 @@ export type PrimeRunStopResult =
   | { outcome: "stopped"; settlement: PrimeSettlement }
   | { outcome: "uncertain" | "not_found"; settlement: null };
 
+export interface PrimeReconciliationReceipt {
+  receiptId: string;
+  operationId: string;
+  originalTerminalReceiptId: string;
+  originalTerminalDigest: string;
+  originalRequestId: string;
+  originalRequestDigest: string;
+  authorityDigest: string;
+  settlement: PrimeSettlement;
+  nonAdmission: PrimeNonAdmissionProof;
+  /** Null means local reconciliation succeeded but host physical-writer handoff remains pending. */
+  hostHandoff: PrimeWorkerReconciliationProof | null;
+}
+
+export interface PrimeRunReconcileResult {
+  operationId: string;
+  outcome: "stopped" | "not_found" | "uncertain";
+  settlement: PrimeSettlement | null;
+  reconciliation: PrimeReconciliationReceipt | null;
+}
+
 export interface PrimeRunSurface {
   start(input: PrimeRunStartInput): Promise<AsyncIterable<PrimeRunEvent>>;
   cancel(input: {
@@ -106,7 +131,8 @@ export interface PrimeRunSurface {
     bearerToken: string;
     headerRunId: string;
     operationId: string;
-  }): Promise<"stopped" | "not_found" | "uncertain">;
+    recovery?: { terminalReceiptId: string; request: unknown };
+  }): Promise<PrimeRunReconcileResult>;
 }
 
 export class PrimeRunBoundaryError extends Error {

@@ -5332,10 +5332,10 @@ index 2382fae..c8b5563 100644
        const inspection = await inspectExecutionWorkspaceBranchForReconcile(existing);
        // A recorded branch whose ref is confirmed absent (not merely unreadable)
        // has nothing to lose, so adopting the clean checked-out branch is
-diff --git c/server/src/services/heartbeat.ts w/server/src/services/heartbeat.ts
-index 6cce1f3..5ed13ce 100644
---- c/server/src/services/heartbeat.ts
-+++ w/server/src/services/heartbeat.ts
+diff --git a/server/src/services/heartbeat.ts b/server/src/services/heartbeat.ts
+index 6cce1f365ea87735303c6ab2441dca96417d0404..57fc1102aa2ee4ec2ca7180da997fd84ded1ffd1 100644
+--- a/server/src/services/heartbeat.ts
++++ b/server/src/services/heartbeat.ts
 @@ -32,6 +32,9 @@ import { applyConnectorSkills, prepareConnectorSkillDelivery, resolveConnectorAs
  import { admitExplicitNativeContinuation, undeliveredLegacyUserCommentIds } from "./explicit-native-continuation.js";
  import { connectionIntentService } from "./connection-intents.js";
@@ -5378,7 +5378,15 @@ index 6cce1f3..5ed13ce 100644
  import {
    assertAgentCoreProfileRecoveryBinding,
    assertManagedProfileRecoveryBinding,
-@@ -324,7 +333,7 @@ import {
+@@ -303,6 +312,7 @@ import {
+   MAX_EXCERPT_BYTES,
+ } from "../adapters/utils.js";
+ import { costService } from "./costs.js";
++import { heartbeatRunSupersededByIssueStateSql } from "./sidebar-badges.js";
+ import {
+   authorizeChatConversationForBoundRun,
+   isExternalChatWaitAuthorizationContention,
+@@ -324,7 +334,7 @@ import {
    nativeChatWorkspaceCwd,
    nativeChatWorkspaceMatches,
  } from "./native-runtime/native-chat-workspace.js";
@@ -5387,7 +5395,7 @@ index 6cce1f3..5ed13ce 100644
  import { trackAgentFirstHeartbeat } from "@paperclipai/shared/telemetry";
  import { getTelemetryClient } from "../telemetry.js";
  import {
-@@ -395,6 +404,7 @@ import {
+@@ -395,6 +405,7 @@ import {
    ensureGitWorktreeBranchCoherent,
    ensurePersistedExecutionWorkspaceAvailable,
    ensureRuntimeServicesForRun,
@@ -5395,7 +5403,7 @@ index 6cce1f3..5ed13ce 100644
    formatManagedGitWorktreeBranchInspection,
    inspectManagedGitWorktreeBranch,
    persistAdapterManagedRuntimeServices,
-@@ -847,6 +857,7 @@ const NON_RETRYABLE_PREFLIGHT_FAILURE_CODES = new Set<string>([
+@@ -847,6 +858,7 @@ const NON_RETRYABLE_PREFLIGHT_FAILURE_CODES = new Set<string>([
    "low_trust_requires_sandbox_environment",
    "low_trust_runtime_services_denied",
    "chat_failed_run_retry_not_authorized",
@@ -5403,7 +5411,7 @@ index 6cce1f3..5ed13ce 100644
    CHAT_CONTROL_RECOVERY_UNRESOLVED_CODE,
  ]);
  // Error codes that mark a pre-dispatch setup failure. The adapter process never
-@@ -862,6 +873,8 @@ const PRE_ADAPTER_SETUP_FAILURE_CODES = new Set<string>([
+@@ -862,6 +874,8 @@ const PRE_ADAPTER_SETUP_FAILURE_CODES = new Set<string>([
  function nonRetryablePreflightFailureCode(error: unknown): string | null {
    if (error instanceof ChatControlRecoveryUnresolvedError)
      return CHAT_CONTROL_RECOVERY_UNRESOLVED_CODE;
@@ -5412,7 +5420,7 @@ index 6cce1f3..5ed13ce 100644
    if (
      error instanceof HttpError &&
      error.status === 409 &&
-@@ -1272,6 +1285,7 @@ const ISSUE_RESPONSIBLE_USER_WAKE_REASONS = new Set([
+@@ -1272,6 +1286,7 @@ const ISSUE_RESPONSIBLE_USER_WAKE_REASONS = new Set([
    "execution_review_requested",
    "execution_approval_requested",
    "execution_changes_requested",
@@ -5420,7 +5428,7 @@ index 6cce1f3..5ed13ce 100644
    "approval_approved",
  ]);
  const SESSIONED_LOCAL_ADAPTERS = new Set([
-@@ -2437,7 +2451,12 @@ export async function ensureManagedProjectWorkspace(input: {
+@@ -2437,7 +2452,12 @@ export async function ensureManagedProjectWorkspace(input: {
    repoUrl: string | null;
    /** Optional git credential source for cloning private repos; null/absent preserves ambient behavior. */
    resolveGitAuth?: GitRemoteAuthProvider | null;
@@ -5433,7 +5441,7 @@ index 6cce1f3..5ed13ce 100644
    const defaultCwd = resolveManagedProjectWorkspaceDir({
      companyId: input.companyId,
      projectId: input.projectId,
-@@ -2451,6 +2470,7 @@ export async function ensureManagedProjectWorkspace(input: {
+@@ -2451,6 +2471,7 @@ export async function ensureManagedProjectWorkspace(input: {
        cwd = `${cwd}-${createHash("sha256").update(input.repoUrl).digest("hex").slice(0, 12)}`;
      }
    }
@@ -5441,7 +5449,7 @@ index 6cce1f3..5ed13ce 100644
    const inFlight = managedCheckoutMaterializations.get(cwd);
    if (inFlight) {
      await inFlight;
-@@ -2657,9 +2677,15 @@ async function resolveConfiguredOrManagedProjectCwd(input: {
+@@ -2657,9 +2678,15 @@ async function resolveConfiguredOrManagedProjectCwd(input: {
    cwd: string | null;
    repoUrl: string | null;
    resolveGitAuth?: GitRemoteAuthProvider | null;
@@ -5457,7 +5465,7 @@ index 6cce1f3..5ed13ce 100644
      return { cwd: configuredCwd, warning: null };
    }
    return ensureManagedProjectWorkspace({
-@@ -2667,6 +2693,8 @@ async function resolveConfiguredOrManagedProjectCwd(input: {
+@@ -2667,6 +2694,8 @@ async function resolveConfiguredOrManagedProjectCwd(input: {
      projectId: input.projectId,
      repoUrl: readNonEmptyString(input.repoUrl),
      resolveGitAuth: input.resolveGitAuth ?? null,
@@ -5466,7 +5474,7 @@ index 6cce1f3..5ed13ce 100644
    });
  }
  
-@@ -2689,7 +2717,12 @@ export interface ResolveAdditionalProjectWorkspaceDeps {
+@@ -2689,7 +2718,12 @@ export interface ResolveAdditionalProjectWorkspaceDeps {
  function defaultAdditionalProjectWorkspaceDeps(
    db: Db,
    resolveGitAuth?: GitRemoteAuthProvider,
@@ -5479,7 +5487,7 @@ index 6cce1f3..5ed13ce 100644
    return {
      loadProjectWorkspaceRows: (companyId, projectId) =>
        db
-@@ -2709,6 +2742,8 @@ function defaultAdditionalProjectWorkspaceDeps(
+@@ -2709,6 +2743,8 @@ function defaultAdditionalProjectWorkspaceDeps(
            input.resolveGitAuth ??
            resolveGitAuth ??
            createGitRemoteAuthProvider(db, input.companyId),
@@ -5488,7 +5496,7 @@ index 6cce1f3..5ed13ce 100644
        }),
      ensureManagedProjectWorkspace: (input) =>
        ensureManagedProjectWorkspace({
-@@ -2717,6 +2752,8 @@ function defaultAdditionalProjectWorkspaceDeps(
+@@ -2717,6 +2753,8 @@ function defaultAdditionalProjectWorkspaceDeps(
            input.resolveGitAuth ??
            resolveGitAuth ??
            createGitRemoteAuthProvider(db, input.companyId),
@@ -5497,7 +5505,15 @@ index 6cce1f3..5ed13ce 100644
        }),
      // A realized workspace must hold real content. An empty directory gives the agent an empty
      // referenced workspace, so treat an empty directory the same as a missing one.
-@@ -4427,6 +4464,7 @@ export async function resolveAdditionalRunWorkspaces(
+@@ -3366,6 +3404,7 @@ const heartbeatRunListColumns = {
+   nextAction: heartbeatRuns.nextAction,
+   createdAt: heartbeatRuns.createdAt,
+   updatedAt: heartbeatRuns.updatedAt,
++  supersededByIssueState: heartbeatRunSupersededByIssueStateSql,
+ } as const;
+ 
+ const heartbeatRunSummaryListColumns = {
+@@ -4427,6 +4466,7 @@ export async function resolveAdditionalRunWorkspaces(
      try {
        additionalWorkspaces.push(await opts.resolveProjectWorkspace(project));
      } catch (error) {
@@ -5505,7 +5521,7 @@ index 6cce1f3..5ed13ce 100644
        const reason = error instanceof Error ? error.message : String(error);
        warnings.push(
          `Referenced project ${project.projectId} was skipped because its workspace could not be prepared: ${reason}`,
-@@ -4573,6 +4611,7 @@ export async function buildPaperclipRuntimeMcpServers(input: {
+@@ -4573,6 +4613,7 @@ export async function buildPaperclipRuntimeMcpServers(input: {
    agent: Pick<typeof agents.$inferSelect, "id" | "companyId" | "name">;
    runId: string;
    expectedAssignmentDigest?: string | null;
@@ -5513,7 +5529,7 @@ index 6cce1f3..5ed13ce 100644
  }): Promise<AdapterRuntimeMcpServer[]> {
    const access = toolAccessService(input.db);
    const effective = await access.getEffectiveProfilesForAgent(
-@@ -4684,7 +4723,7 @@ export async function buildPaperclipRuntimeMcpServers(input: {
+@@ -4684,7 +4725,7 @@ export async function buildPaperclipRuntimeMcpServers(input: {
    ) {
      return [];
    }
@@ -5522,7 +5538,7 @@ index 6cce1f3..5ed13ce 100644
    let [profile] = await input.db
      .select()
      .from(toolProfiles)
-@@ -4733,7 +4772,7 @@ export async function buildPaperclipRuntimeMcpServers(input: {
+@@ -4733,7 +4774,7 @@ export async function buildPaperclipRuntimeMcpServers(input: {
      try {
        const created = await access.createProfile(input.agent.companyId, {
          profileKey,
@@ -5531,7 +5547,7 @@ index 6cce1f3..5ed13ce 100644
          description: "Immutable Paperclip Runner MCP assignment profile.",
          status: "active",
          defaultAction: "deny",
-@@ -4777,21 +4816,23 @@ export async function buildPaperclipRuntimeMcpServers(input: {
+@@ -4777,21 +4818,23 @@ export async function buildPaperclipRuntimeMcpServers(input: {
        )
    ).filter(
      (candidate) =>
@@ -5559,7 +5575,7 @@ index 6cce1f3..5ed13ce 100644
              agentId: input.agent.id,
            },
          },
-@@ -4817,6 +4858,16 @@ export async function buildPaperclipRuntimeMcpServers(input: {
+@@ -4817,6 +4860,16 @@ export async function buildPaperclipRuntimeMcpServers(input: {
      }
    }
  
@@ -5576,7 +5592,7 @@ index 6cce1f3..5ed13ce 100644
    const token = await service.createNamedGatewayToken({
      companyId: input.agent.companyId,
      gatewayId: gateway!.id,
-@@ -5675,7 +5726,8 @@ function shouldRequireIssueCommentForWake(
+@@ -5675,7 +5728,8 @@ function shouldRequireIssueCommentForWake(
      wakeReason === "issue_assigned" ||
      wakeReason === "execution_review_requested" ||
      wakeReason === "execution_approval_requested" ||
@@ -5586,7 +5602,7 @@ index 6cce1f3..5ed13ce 100644
    );
  }
  
-@@ -6055,7 +6107,7 @@ export async function provisionExecutionWorkspaceForFreshnessDecision<
+@@ -6055,7 +6109,7 @@ export async function provisionExecutionWorkspaceForFreshnessDecision<
    try {
      restored = (await input.restoreExistingWorkspace?.()) ?? null;
    } catch (error) {
@@ -5595,7 +5611,7 @@ index 6cce1f3..5ed13ce 100644
        throw error;
      }
      reuseFailure = formatInheritedExecutionWorkspaceReuseFailure({
-@@ -12332,7 +12384,7 @@ export function heartbeatService(
+@@ -12332,7 +12386,7 @@ export function heartbeatService(
      agent: typeof agents.$inferSelect,
      context: Record<string, unknown>,
      previousSessionParams: Record<string, unknown> | null,
@@ -5604,7 +5620,7 @@ index 6cce1f3..5ed13ce 100644
    ): Promise<ResolvedAnchorWorkspaceForRun> {
      const issueId =
        readNonEmptyString(context.issueId) ?? readNonEmptyString(context.taskId);
-@@ -12344,6 +12396,9 @@ export function heartbeatService(
+@@ -12344,6 +12398,9 @@ export function heartbeatService(
          readNonEmptyString(context.responsible_user_id),
        agentId: agent.id,
      });
@@ -5614,7 +5630,7 @@ index 6cce1f3..5ed13ce 100644
      const contextProjectId = readNonEmptyString(context.projectId);
      const contextProjectWorkspaceId = readNonEmptyString(
        context.projectWorkspaceId,
-@@ -12415,10 +12470,13 @@ export function heartbeatService(
+@@ -12415,10 +12472,13 @@ export function heartbeatService(
              cwd: workspace.cwd,
              repoUrl: workspace.repoUrl,
              resolveGitAuth,
@@ -5628,7 +5644,7 @@ index 6cce1f3..5ed13ce 100644
            const scrubbedError = scrubGitCredentialText(
              error instanceof Error ? error.message : String(error),
            );
-@@ -12464,6 +12522,9 @@ export function heartbeatService(
+@@ -12464,6 +12524,9 @@ export function heartbeatService(
        }
  
        const fallbackCwd = resolveDefaultAgentWorkspaceDir(agent.id);
@@ -5638,7 +5654,7 @@ index 6cce1f3..5ed13ce 100644
        await fs.mkdir(fallbackCwd, { recursive: true });
        const warnings = buildAnchorFallbackWorkspaceNotes({
          fallbackCwd,
-@@ -12487,10 +12548,13 @@ export function heartbeatService(
+@@ -12487,10 +12550,13 @@ export function heartbeatService(
      }
  
      if (workspaceProjectId) {
@@ -5652,7 +5668,7 @@ index 6cce1f3..5ed13ce 100644
        });
        return {
          cwd: managedWorkspace.cwd,
-@@ -12514,6 +12578,8 @@ export function heartbeatService(
+@@ -12514,6 +12580,8 @@ export function heartbeatService(
          .then((stats) => stats.isDirectory())
          .catch(() => false);
        if (sessionCwdExists) {
@@ -5661,7 +5677,7 @@ index 6cce1f3..5ed13ce 100644
          return {
            cwd: sessionCwd,
            source: "task_session" as const,
-@@ -12530,6 +12596,9 @@ export function heartbeatService(
+@@ -12530,6 +12598,9 @@ export function heartbeatService(
      }
  
      const cwd = resolveDefaultAgentWorkspaceDir(agent.id);
@@ -5671,7 +5687,7 @@ index 6cce1f3..5ed13ce 100644
      await fs.mkdir(cwd, { recursive: true });
      const warnings: string[] = [];
      if (sessionCwd && sessionCwdLooksUnsafe) {
-@@ -12576,6 +12645,7 @@ export function heartbeatService(
+@@ -12576,6 +12647,7 @@ export function heartbeatService(
        useProjectWorkspace?: boolean | null;
        executionEnvironmentDriver?: string | null;
        anchorWorkspace?: ResolvedAnchorWorkspaceForRun;
@@ -5679,7 +5695,7 @@ index 6cce1f3..5ed13ce 100644
      },
    ): Promise<ResolvedWorkspaceForRun> {
      const anchor = opts?.anchorWorkspace ?? await resolveAnchorWorkspaceForRun(
-@@ -12630,7 +12700,8 @@ export function heartbeatService(
+@@ -12630,7 +12702,8 @@ export function heartbeatService(
          resolveProjectWorkspace: (project) =>
            resolveAdditionalProjectWorkspace(
              { companyId: agent.companyId, project },
@@ -5689,7 +5705,7 @@ index 6cce1f3..5ed13ce 100644
            ),
        });
  
-@@ -14030,6 +14101,7 @@ export function heartbeatService(
+@@ -14030,6 +14103,7 @@ export function heartbeatService(
            status: run.status,
            error: run.error,
            errorCode: run.errorCode,
@@ -5697,7 +5713,7 @@ index 6cce1f3..5ed13ce 100644
            resultJson: run.resultJson as Record<string, unknown> | null,
            stdoutExcerpt: run.stdoutExcerpt,
            stderrExcerpt: run.stderrExcerpt,
-@@ -18825,14 +18897,16 @@ export function heartbeatService(
+@@ -18825,14 +18899,16 @@ export function heartbeatService(
          | "live_process_identifier"
          | "observed_owner_unverified"
          | "adopted_runner_authentication_timeout"
@@ -5716,7 +5732,7 @@ index 6cce1f3..5ed13ce 100644
      if (
        run.errorCode === NATIVE_OWNERSHIP_UNVERIFIED_ERROR_CODE &&
        run.error === NATIVE_OWNERSHIP_UNVERIFIED_MESSAGE &&
-@@ -20219,12 +20293,15 @@ export function heartbeatService(
+@@ -20219,12 +20295,15 @@ export function heartbeatService(
        }
        run = claimed;
      }
@@ -5734,7 +5750,7 @@ index 6cce1f3..5ed13ce 100644
      ) {
        // A numeric PID or process-group ID is a liveness signal, never an
        // ownership capability: the OS may have recycled it after the service
-@@ -20315,8 +20392,11 @@ export function heartbeatService(
+@@ -20315,8 +20394,11 @@ export function heartbeatService(
        Parameters<typeof cleanupGitHubOperationLaunchers>[0] | null = null;
      let nativeSessionResumeScheduled = false;
      let nativeOwnershipHeld = false;
@@ -5746,7 +5762,7 @@ index 6cce1f3..5ed13ce 100644
      let nativeWorkspaceFinalizeScheduled = false;
      let nativeWorkspaceSync: Awaited<
        ReturnType<typeof prepareNativeWorkspaceSync>
-@@ -20362,6 +20442,7 @@ export function heartbeatService(
+@@ -20362,6 +20444,7 @@ export function heartbeatService(
        if (selectedAdapter && selectedAdapter !== agent.adapterType) {
          throw new Error("Agent adapter changed during startup; start a new turn with the updated agent.");
        }
@@ -5754,7 +5770,7 @@ index 6cce1f3..5ed13ce 100644
  
        const dispatchIssueId = readNonEmptyString(parseObject(run.contextSnapshot).issueId);
        const resumingAdmittedConversationTurn = !!runOptions.nativeLeaseOwner
-@@ -21481,6 +21562,40 @@ export function heartbeatService(
+@@ -21481,6 +21564,40 @@ export function heartbeatService(
          // preserving isolated mode and the mandatory sandbox preflight.
          ...(useIsolatedTaskDirectory ? { workspaceStrategy: { type: "project_primary" } } : {}),
        };
@@ -5795,7 +5811,7 @@ index 6cce1f3..5ed13ce 100644
        const configSnapshot = buildExecutionWorkspaceConfigSnapshot(
          mergedConfig,
          selectedEnvironmentId,
-@@ -21538,8 +21653,18 @@ export function heartbeatService(
+@@ -21538,8 +21655,18 @@ export function heartbeatService(
        readFailureReportSecrets = () => collectRunFailureSecretValues(resolvedConfig.env, secretKeys);
        if (aiBinding) {
          try {
@@ -5815,16 +5831,16 @@ index 6cce1f3..5ed13ce 100644
            // Only fresh executions can receive a pre-provider wait receipt. A
            // persisted native input may already have provider effects to recover.
            if (isAiConnectionBusy(error) && !persistedNativeExecutionInput) {
-@@ -21716,6 +21841,8 @@ export function heartbeatService(
+@@ -21716,6 +21843,8 @@ export function heartbeatService(
        });
        const resetTaskSession =
          shouldResetTaskSessionForWake(context) || sessionConfigFreshness.reset;
-+      if (agent.adapterType === "prime_bff" && taskSession && resetTaskSession)
++      if (agent.adapterType === "prime_bff" && taskSessionDecodedParams !== null && resetTaskSession)
 +        throw new Error("Prime saved task checkpoint requires exact session scope; refusing automatic reset");
        const sessionResetReason =
          sessionConfigFreshness.reasons.join("; ") || null;
        const taskSessionForRun = resetTaskSession ? null : taskSession;
-@@ -21762,6 +21889,9 @@ export function heartbeatService(
+@@ -21762,6 +21891,9 @@ export function heartbeatService(
          },
          resolveWorkspace: async () => {
            if (useIsolatedTaskDirectory && issueRef) {
@@ -5834,7 +5850,7 @@ index 6cce1f3..5ed13ce 100644
              const cwd = await materializeIsolatedTaskDirectory({
                companyId: agent.companyId,
                issueId: issueRef.id,
-@@ -21779,6 +21909,7 @@ export function heartbeatService(
+@@ -21779,6 +21911,7 @@ export function heartbeatService(
                });
              }
              return resolveWorkspaceForRun(agent, context, previousSessionParams, {
@@ -5842,7 +5858,7 @@ index 6cce1f3..5ed13ce 100644
                executionEnvironmentDriver: selectedEnvironmentForConfig?.driver ?? null,
                anchorWorkspace: {
                  cwd,
-@@ -21795,6 +21926,7 @@ export function heartbeatService(
+@@ -21795,6 +21928,7 @@ export function heartbeatService(
              });
            }
            if (nativeChatWorkspaceScope && !nativeChatWorkspaceScope.projectId) {
@@ -5850,7 +5866,7 @@ index 6cce1f3..5ed13ce 100644
              const cwd = await materializeNativeChatTaskRoot(
                nativeChatWorkspaceScope,
              );
-@@ -21818,6 +21950,7 @@ export function heartbeatService(
+@@ -21818,6 +21952,7 @@ export function heartbeatService(
              context,
              previousSessionParams,
              {
@@ -5858,7 +5874,7 @@ index 6cce1f3..5ed13ce 100644
                useProjectWorkspace:
                  requestedExecutionWorkspaceMode !== "agent_default",
                // Thread the selected environment driver so run-workspace resolution can tell a local
-@@ -21854,6 +21987,11 @@ export function heartbeatService(
+@@ -21854,6 +21989,11 @@ export function heartbeatService(
          repoRef: resolvedWorkspace.repoRef,
          additionalWorkspaces: resolvedWorkspace.additionalWorkspaces,
        } satisfies ExecutionWorkspaceInput;
@@ -5870,7 +5886,7 @@ index 6cce1f3..5ed13ce 100644
        await assertGitWorktreeBaseWorkspaceReady({
          requestedExecutionWorkspaceMode,
          config: hostExecutionWorkspaceConfig,
-@@ -21957,6 +22095,12 @@ export function heartbeatService(
+@@ -21957,6 +22097,12 @@ export function heartbeatService(
            nextMetadata: latestWorkspaceConfigMetadata,
          },
        );
@@ -5883,7 +5899,7 @@ index 6cce1f3..5ed13ce 100644
        const workspaceReuseProvisioningPolicy =
          resolveExecutionWorkspaceReuseProvisioningPolicy({
            requestedShouldReuseExisting,
-@@ -22381,23 +22525,34 @@ export function heartbeatService(
+@@ -22381,23 +22527,34 @@ export function heartbeatService(
        }
        await bindIssueToPersistedExecutionWorkspace(persistedExecutionWorkspace);
        const projectRepositoryPaths: string[] = [];
@@ -5930,7 +5946,7 @@ index 6cce1f3..5ed13ce 100644
        }
        if (persistedExecutionWorkspace) {
          context.executionWorkspaceId = persistedExecutionWorkspace.id;
-@@ -22579,6 +22734,8 @@ export function heartbeatService(
+@@ -22579,6 +22736,8 @@ export function heartbeatService(
          catch { throw new ConfigurationIncompleteFailure("Project authentication conflicts with this agent’s managed AI connection", { configurationIncomplete: { reason: "ai_connection_incompatible", actionUrl: `/agents/${agent.id}/runtime` } }); }
        }
        const remoteExecution = realizationResult.remoteExecution;
@@ -5939,7 +5955,7 @@ index 6cce1f3..5ed13ce 100644
        if (
          nativeChatWorkspaceScope &&
          (executionTarget?.kind === "remote" ||
-@@ -22930,6 +23087,8 @@ export function heartbeatService(
+@@ -22930,6 +23089,8 @@ export function heartbeatService(
          continuationSummaryBody: continuationSummary?.body ?? null,
        });
        if (sessionCompaction.rotate) {
@@ -5948,7 +5964,7 @@ index 6cce1f3..5ed13ce 100644
          context.paperclipSessionHandoffMarkdown =
            sessionCompaction.handoffMarkdown;
          context.paperclipSessionRotationReason = sessionCompaction.reason;
-@@ -22956,6 +23115,8 @@ export function heartbeatService(
+@@ -22956,6 +23117,8 @@ export function heartbeatService(
        if (managedAiRuntime) {
          sessionConfigMetadata.aiCredentialIdentity = managedAiRuntime.identity;
          if (!taskSessionCredentialCompatible) {
@@ -5957,7 +5973,7 @@ index 6cce1f3..5ed13ce 100644
            runtimeSessionIdForAdapter = null;
            runtimeSessionParamsForAdapter = null;
            previousSessionDisplayId = null;
-@@ -23262,7 +23423,8 @@ export function heartbeatService(
+@@ -23262,7 +23425,8 @@ export function heartbeatService(
                typeof entry[0] === "string" && typeof entry[1] === "string",
            ),
          );
@@ -5967,7 +5983,7 @@ index 6cce1f3..5ed13ce 100644
            db,
            runId: run.id,
            agent: {
-@@ -24174,6 +24336,11 @@ export function heartbeatService(
+@@ -24174,6 +24338,11 @@ export function heartbeatService(
              return true;
            });
            if (!nativeSelected) return;
@@ -5979,7 +5995,7 @@ index 6cce1f3..5ed13ce 100644
            controllerLease.stop();
            nativeWorkspaceSync = await prepareNativeWorkspaceSync({
              db,
-@@ -24226,7 +24393,7 @@ export function heartbeatService(
+@@ -24226,7 +24395,7 @@ export function heartbeatService(
              : { kind: "standard" as const };
          const authToken =
            nativeRuntimeResolution.kind === "legacy" &&
@@ -5988,7 +6004,7 @@ index 6cce1f3..5ed13ce 100644
              ? createLocalAgentJwt(
                  agent.id,
                  agent.companyId,
-@@ -24238,7 +24405,7 @@ export function heartbeatService(
+@@ -24238,7 +24407,7 @@ export function heartbeatService(
              : null;
          if (
            nativeRuntimeResolution.kind === "legacy" &&
@@ -5997,7 +6013,7 @@ index 6cce1f3..5ed13ce 100644
            !authToken
          ) {
            logger.warn(
-@@ -24252,6 +24419,12 @@ export function heartbeatService(
+@@ -24252,6 +24421,12 @@ export function heartbeatService(
            );
          }
          let adapterFinalizeOutcome: "succeeded" | "failed" | null = null;
@@ -6010,7 +6026,7 @@ index 6cce1f3..5ed13ce 100644
          const inspectFinalizeWorkspaceBranch = async () => {
            const workspaceRecord = persistedExecutionWorkspace?.id
              ? await executionWorkspacesSvc.getById(
-@@ -24284,7 +24457,7 @@ export function heartbeatService(
+@@ -24284,7 +24459,7 @@ export function heartbeatService(
            let finalizeBranchMetadata: Record<string, unknown> | null = null;
            let finalizeBranchRepairMetadata: Record<string, unknown> | null =
              null;
@@ -6019,7 +6035,7 @@ index 6cce1f3..5ed13ce 100644
              const branchInspection = await inspectFinalizeWorkspaceBranch();
              if (branchInspection) {
                let inspection = branchInspection.inspection;
-@@ -24454,6 +24627,9 @@ export function heartbeatService(
+@@ -24454,6 +24629,9 @@ export function heartbeatService(
                adapterType: agent.adapterType,
                executionTargetKind: executionTarget?.kind ?? "local",
                ...metadata,
@@ -6029,7 +6045,7 @@ index 6cce1f3..5ed13ce 100644
                ...(finalizeBranchMetadata
                  ? { managedGitWorktreeBranch: finalizeBranchMetadata }
                  : {}),
-@@ -24617,6 +24793,7 @@ export function heartbeatService(
+@@ -24617,6 +24795,7 @@ export function heartbeatService(
                      managedGitHub: !useHostGitHub && githubSelection.configured,
                      managedAiCredentialIdentity: managedAiRuntime?.identity,
                      managedAiCredentialHome: managedAiRuntime ? String((managedAiRuntime.config.env as Record<string, unknown>).CODEX_HOME) : undefined,
@@ -6037,7 +6053,7 @@ index 6cce1f3..5ed13ce 100644
                      runnerEnvironment: {
                        ...buildNativeProviderEnvironment(
                          adapterEnv,
-@@ -24712,7 +24889,11 @@ export function heartbeatService(
+@@ -24712,7 +24891,11 @@ export function heartbeatService(
              // adapters need it in their prompt, but the authoritative answers
              // remain on the interaction instead of being duplicated in the
              // heartbeat run snapshot.
@@ -6050,7 +6066,7 @@ index 6cce1f3..5ed13ce 100644
                ...context,
                ...(legacyQuestionResponse
                  ? {
-@@ -24723,13 +24904,13 @@ export function heartbeatService(
+@@ -24723,13 +24906,13 @@ export function heartbeatService(
                    }
                  : {}),
              };
@@ -6066,7 +6082,7 @@ index 6cce1f3..5ed13ce 100644
                logger.warn(
                  {
                    companyId: agent.companyId,
-@@ -24739,10 +24920,10 @@ export function heartbeatService(
+@@ -24739,10 +24922,10 @@ export function heartbeatService(
                  "runtime connection tools could not be delivered",
                );
              }
@@ -6080,7 +6096,7 @@ index 6cce1f3..5ed13ce 100644
              });
              const runtimeToolDelivery =
                adapter.runtimeToolDelivery ?? "invocation_context";
-@@ -24754,15 +24935,15 @@ export function heartbeatService(
+@@ -24754,15 +24937,15 @@ export function heartbeatService(
                  connectionId: "paperclip-runtime-tools",
                });
              }
@@ -6100,7 +6116,7 @@ index 6cce1f3..5ed13ce 100644
                db,
                agent,
                runId: run.id,
-@@ -24775,17 +24956,36 @@ export function heartbeatService(
+@@ -24775,17 +24958,36 @@ export function heartbeatService(
              }
              const guardedDispatch =
                await dispatchResolvedInteractionContinuationWithAtomicGate(
@@ -6143,7 +6159,7 @@ index 6cce1f3..5ed13ce 100644
                      executionTarget,
                      executionTransport: remoteExecution
                        ? {
-@@ -24850,12 +25050,76 @@ export function heartbeatService(
+@@ -24850,12 +25052,76 @@ export function heartbeatService(
                          startedAt: meta.startedAt,
                        });
                      },
@@ -6221,7 +6237,7 @@ index 6cce1f3..5ed13ce 100644
            }
            if (instructionSave) adapterResult.resultJson = { ...adapterResult.resultJson, instructionSave };
            adapterResult = applyWorkspaceRestoreFailure(adapterResult);
-@@ -24931,6 +25195,22 @@ export function heartbeatService(
+@@ -24931,6 +25197,22 @@ export function heartbeatService(
              await completeWorkspace();
            }
          } catch (adapterErr) {
@@ -6244,7 +6260,7 @@ index 6cce1f3..5ed13ce 100644
            if (adapterErr instanceof NativeWorkspaceFinalizationBusyError
              || adapterErr instanceof NativeWorkspaceFinalizationOwnershipLostError) {
              nativeWorkspaceFinalizeScheduled = true;
-@@ -25428,6 +25708,10 @@ export function heartbeatService(
+@@ -25428,6 +25710,10 @@ export function heartbeatService(
                .returning()
                .then((rows) => rows[0] ?? null);
            }
@@ -6255,7 +6271,7 @@ index 6cce1f3..5ed13ce 100644
            if (!persistedRun) {
              logger.info(
                {
-@@ -25968,6 +26252,7 @@ export function heartbeatService(
+@@ -25968,6 +26254,7 @@ export function heartbeatService(
            })
            .catch(() => null);
          const failureErrorCode =
@@ -6263,7 +6279,7 @@ index 6cce1f3..5ed13ce 100644
            workspaceValidationFailure?.code ??
            configurationIncompleteFailure?.code ??
            nonRetryablePreflightFailureCode(err) ??
-@@ -26095,7 +26380,9 @@ export function heartbeatService(
+@@ -26095,7 +26382,9 @@ export function heartbeatService(
              // exhaustion. Once its durable coordinator has classified a
              // terminal failure, generic issue recovery must not create a
              // replacement retryOfRunId chain for the same provider work.
@@ -6274,7 +6290,7 @@ index 6cce1f3..5ed13ce 100644
            });
            await handleIssueReviewPathDisposition(livenessRun);
  
-@@ -26149,18 +26436,26 @@ export function heartbeatService(
+@@ -26149,18 +26438,26 @@ export function heartbeatService(
          });
        }
      } catch (outerErr) {
@@ -6304,7 +6320,7 @@ index 6cce1f3..5ed13ce 100644
            }).catch(() => undefined);
        } else if (outerErr instanceof StaleExecutionContinuationError) {
          // The queued continuation became obsolete before adapter dispatch.
-@@ -26223,6 +26518,7 @@ export function heartbeatService(
+@@ -26223,6 +26520,7 @@ export function heartbeatService(
            nonRetryablePreflightFailureCode(outerErr);
          const workspaceGitScanFailure = isWorkspaceGitScanError(outerErr) ? outerErr : null;
          const setupFailureErrorCode =
@@ -6312,7 +6328,7 @@ index 6cce1f3..5ed13ce 100644
            workspaceGitScanFailure?.code ??
            workspaceValidationSetupFailure?.code ??
            configurationIncompleteSetupFailure?.code ??
-@@ -26366,6 +26662,7 @@ export function heartbeatService(
+@@ -26366,6 +26664,7 @@ export function heartbeatService(
            }
            await releaseIssueExecutionAndPromote(livenessRun, {
              suppressImmediateRecovery:
@@ -6320,7 +6336,7 @@ index 6cce1f3..5ed13ce 100644
                readNonEmptyString(
                  parseObject(livenessRun.contextSnapshot).goalControlRequestId,
                ) !== null ||
-@@ -26403,8 +26700,33 @@ export function heartbeatService(
+@@ -26403,8 +26702,33 @@ export function heartbeatService(
        }
      } finally {
        await nativeInstructionReservation?.release().catch(error => logger.warn({ runId: run.id, err: error }, "Managed warm session preparation cleanup failed"));
@@ -6355,7 +6371,7 @@ index 6cce1f3..5ed13ce 100644
        try {
          if (latestRun && isHeartbeatRunTerminalStatus(latestRun.status)) {
            await db
-@@ -26609,6 +26931,26 @@ export function heartbeatService(
+@@ -26609,6 +26933,26 @@ export function heartbeatService(
            logger.error({ err, runId: run.id }, "failed to promote legacy comment queue after cleanup");
          });
        }
@@ -6382,7 +6398,7 @@ index 6cce1f3..5ed13ce 100644
        if (
          !nativeSessionResumeScheduled &&
          !nativeWorkspaceFinalizeScheduled &&
-@@ -26626,6 +26968,7 @@ export function heartbeatService(
+@@ -26626,6 +26970,7 @@ export function heartbeatService(
          }
          await startNextQueuedRunForAgent(run.agentId);
        }
@@ -11170,10 +11186,10 @@ index 0000000..1d42aa2
 +]);
 diff --git 1/packages/shared/src/prime-runtime.ts 2/packages/shared/src/prime-runtime.ts
 new file mode 100644
-index 0000000..b08b18f
+index 0000000..318bea1
 --- /dev/null
 +++ 2/packages/shared/src/prime-runtime.ts
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,75 @@
 +import { z } from "zod";
 +
 +/** Maximum single Prime authority, broker request, or newline-delimited receipt in UTF-8 bytes. */
@@ -11223,13 +11239,15 @@ index 0000000..b08b18f
 +  z.object({ method: z.literal("paperclip.request"), httpMethod: z.enum(["GET", "POST", "PATCH", "PUT"]), path: z.string().min(1).max(1024), body: z.unknown().optional() }).strict(),
 +  z.object({ method: z.literal("paperclip.finish"), status: z.enum(["blocked", "in_review", "done"]), summary: z.string().min(1).max(20_000) }).strict(),
 +  z.object({ method: z.literal("effect.status"), targetRequestId: id }).strict(),
++  z.object({ method: z.literal("effect.non_admission"), targetRequestId: id, targetRequestDigest: digest, targetMethod: z.literal("paperclip.request") }).strict(),
 +  z.object({ method: z.literal("operation.stop") }).strict(),
 +  z.object({ method: z.literal("operation.status") }).strict(),
++  z.object({ method: z.literal("operation.reconcile_worker"), terminalReceiptId: id }).strict(),
 +]);
 +export const primeBrokerRequestSchema = z.object({ version: z.literal(2), authorityDigest: digest, operationId: id, requestId: id, payload: primeBrokerPayloadSchema }).strict();
 +export type PrimeBrokerRequest = z.infer<typeof primeBrokerRequestSchema>;
 +export const primeBrokerResultSchema = z.discriminatedUnion("kind", [
-+  z.object({ kind: z.literal("reservation"), method: z.enum(["provider.catalog", "provider.stream", "provider.status", "provider.abort", "mcp.tools.list", "mcp.tools.call", "paperclip.request", "paperclip.finish", "effect.status", "operation.stop", "operation.status"]), state: z.enum(["dispatching", "uncertain"]) }).strict(),
++  z.object({ kind: z.literal("reservation"), method: z.enum(["provider.catalog", "provider.stream", "provider.status", "provider.abort", "mcp.tools.list", "mcp.tools.call", "paperclip.request", "paperclip.finish", "effect.status", "effect.non_admission", "operation.stop", "operation.status", "operation.reconcile_worker"]), state: z.enum(["dispatching", "uncertain"]) }).strict(),
 +  z.object({ kind: z.literal("catalog"), provider: z.literal("openai-codex"), model: id, available: z.literal(true) }).strict(),
 +  z.object({ kind: z.literal("provider"), providerRequestId: id.nullable(), state: z.enum(["accepted", "streaming", "completed", "aborted", "failed", "uncertain"]), usage: jsonObject.nullable() }).strict(),
 +  z.object({ kind: z.literal("mcp_tools"), connectionId: id, tools: primeRuntimeAuthoritySchema.shape.mcp.shape.tools }).strict(),
@@ -11237,6 +11255,8 @@ index 0000000..b08b18f
 +  z.object({ kind: z.literal("paperclip"), requestId: id, status: z.number().int().min(200).max(299), body: z.unknown() }).strict(),
 +  z.object({ kind: z.literal("finalization"), intentId: id, issueId: id, status: z.enum(["blocked", "in_review", "done"]), summary: z.string().min(1).max(20_000), state: z.literal("recorded") }).strict(),
 +  z.object({ kind: z.literal("operation"), fenced: z.boolean(), provider: z.enum(["settled", "uncertain"]), governedActions: z.enum(["settled", "uncertain"]), outstandingEffects: z.number().int().nonnegative() }).strict(),
++  z.object({ kind: z.literal("non_admission"), state: z.literal("not_admitted"), operationId: id, runId: id, authorityDigest: digest, targetRequestId: id, targetRequestDigest: digest, targetMethod: z.literal("paperclip.request"), fence: z.literal("stopped"), proofRequestId: id }).strict(),
++  z.object({ kind: z.literal("worker_reconciliation"), state: z.literal("settled"), operationId: id, runId: id, authorityDigest: digest, terminalReceiptId: id, terminalDigest: digest, worker: z.literal("stopped"), descendants: z.literal("stopped"), proofRequestId: id }).strict(),
 +]);
 +export type PrimeBrokerResult = z.infer<typeof primeBrokerResultSchema>;
 +export const primeBrokerFrameSchema = z.discriminatedUnion("kind", [
@@ -11301,11 +11321,12 @@ index 0000000..a5d6f78
 +}
 diff --git 1/server/src/services/prime-broker.test.ts 2/server/src/services/prime-broker.test.ts
 new file mode 100644
-index 0000000..fcc6842
+index 0000000..bce94f3
 --- /dev/null
 +++ 2/server/src/services/prime-broker.test.ts
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,87 @@
 +import { describe, expect, it } from "vitest";
++import { primeBrokerFrameSchema, primeBrokerRequestSchema } from "@paperclipai/shared";
 +import { decodeSubscriptionCredential, primeEffectBlocksExecution } from "./prime-broker.js";
 +
 +const tokens = { access_token: "fixture-subscription-token", account_id: "fixture-account" };
@@ -11349,17 +11370,59 @@ index 0000000..fcc6842
 +    expect(primeEffectBlocksExecution("provider.stream", state, false)).toBe(false);
 +  });
 +});
++
++describe("Prime durable control-only observation wire", () => {
++  const digest = "a".repeat(64);
++  const base = { version: 2, authorityDigest: digest, operationId: "original-run",
++    requestId: "proof-observation" };
++
++  it("requires the exact negative target binding and exact proof frame identity", () => {
++    const payload = { method: "effect.non_admission", targetRequestId: "original-put",
++      targetRequestDigest: digest, targetMethod: "paperclip.request" };
++    expect(primeBrokerRequestSchema.parse({ ...base, payload }).payload).toEqual(payload);
++    expect(primeBrokerRequestSchema.safeParse({ ...base,
++      payload: { ...payload, targetMethod: "provider.stream" } }).success).toBe(false);
++    expect(primeBrokerRequestSchema.safeParse({ ...base,
++      payload: { ...payload, targetRequestDigest: "not-a-digest" } }).success).toBe(false);
++    expect(primeBrokerRequestSchema.safeParse({ ...base,
++      payload: { ...payload, httpMethod: "PUT" } }).success).toBe(false);
++    const proof = { version: 2, requestId: base.requestId, sequence: 0, kind: "result",
++      result: { kind: "non_admission", state: "not_admitted", operationId: base.operationId,
++        runId: base.operationId, authorityDigest: digest, targetRequestId: payload.targetRequestId,
++        targetRequestDigest: digest, targetMethod: "paperclip.request", fence: "stopped",
++        proofRequestId: base.requestId } };
++    expect(primeBrokerFrameSchema.parse(proof)).toEqual(proof);
++    expect(primeBrokerFrameSchema.safeParse({ ...proof,
++      result: { ...proof.result, fence: "uncertain" } }).success).toBe(false);
++  });
++
++  it("requires an original terminal ID and stopped-worker proof dimensions", () => {
++    expect(primeBrokerRequestSchema.parse({ ...base, payload: {
++      method: "operation.reconcile_worker", terminalReceiptId: "original-terminal" },
++    }).payload).toEqual({ method: "operation.reconcile_worker", terminalReceiptId: "original-terminal" });
++    expect(primeBrokerRequestSchema.safeParse({ ...base,
++      payload: { method: "operation.reconcile_worker", terminalReceiptId: "" } }).success).toBe(false);
++    const proof = { version: 2, requestId: base.requestId, sequence: 0, kind: "result",
++      result: { kind: "worker_reconciliation", state: "settled", operationId: base.operationId,
++        runId: base.operationId, authorityDigest: digest, terminalReceiptId: "original-terminal",
++        terminalDigest: digest, worker: "stopped", descendants: "stopped",
++        proofRequestId: base.requestId } };
++    expect(primeBrokerFrameSchema.parse(proof)).toEqual(proof);
++    expect(primeBrokerFrameSchema.safeParse({ ...proof,
++      result: { ...proof.result, descendants: "unknown" } }).success).toBe(false);
++  });
++});
 diff --git 1/server/src/services/prime-broker.ts 2/server/src/services/prime-broker.ts
 new file mode 100644
-index 0000000..274abc4
+index 0000000..ceb820f
 --- /dev/null
 +++ 2/server/src/services/prime-broker.ts
-@@ -0,0 +1,968 @@
+@@ -0,0 +1,1124 @@
 +import { createHash } from "node:crypto";
 +import { arch, platform, release } from "node:os";
-+import { and, desc, eq, inArray } from "drizzle-orm";
-+import { agents, heartbeatRuns, issues, primeRuntimeAuthorities, primeBrokerRequests, primeBrokerReceipts, toolInvocations, toolActionRequests, toolMcpGateways, type Db } from "@paperclipai/db";
-+import { PRIME_RUNTIME_WIRE_LIMIT_BYTES, primeBrokerRequestSchema, primeRuntimeAuthoritySchema, type PrimeBrokerRequest, type PrimeBrokerFrame, type PrimeBrokerResult, type PrimeRuntimeAuthority } from "@paperclipai/shared";
++import { and, desc, eq, inArray, sql } from "drizzle-orm";
++import { agents, heartbeatRuns, issues, primeRuntimeAuthorities, primeBrokerRequests, primeBrokerReceipts, primePhysicalWriters, toolInvocations, toolActionRequests, toolMcpGateways, type Db } from "@paperclipai/db";
++import { PRIME_RUNTIME_WIRE_LIMIT_BYTES, primeBrokerRequestSchema, primeBrokerFrameSchema, primeRuntimeAuthoritySchema, type PrimeBrokerRequest, type PrimeBrokerFrame, type PrimeBrokerResult, type PrimeRuntimeAuthority } from "@paperclipai/shared";
 +import type { ManagedAiCredentialLifecycle } from "@paperclipai/adapter-utils";
 +import { assertPrimeExecuteCurrent, primeDigest, selectPrimeSubscription, verifyPrimeCapability } from "./prime-runtime-authority.js";
 +import { createToolGatewayService, storedInvocationResult } from "./tool-gateway.js";
@@ -11455,9 +11518,49 @@ index 0000000..274abc4
 +}
 +const effectMethods: Record<string, true> = { "provider.stream": true, "mcp.tools.call": true, "paperclip.request": true, "paperclip.finish": true };
 +const executeMethods: Record<string, true> = { "provider.catalog": true, "provider.stream": true, "mcp.tools.list": true, "mcp.tools.call": true, "paperclip.request": true, "paperclip.finish": true };
-+const controlMethods: Record<string, true> = { "provider.abort": true, "operation.stop": true };
++const controlMethods: Record<string, true> = { "provider.abort": true, "operation.stop": true, "effect.non_admission": true, "operation.reconcile_worker": true };
 +const terminalStates: Record<string, true> = { completed: true, failed: true, aborted: true };
 +const dispatchKey = (runId: string, requestId: string) => `${runId}:${requestId}`;
++function noActiveHostWork(runId: string) {
++  if (primeHostRuns.has(runId)) throw new Error("Prime host worker is still owned");
++  const prefix = `${runId}:`;
++  for (const key of ownedDispatches) if (key.startsWith(prefix))
++    throw new Error("Prime host dispatch is still owned");
++  for (const key of ownedPaperclipEffects) if (key.startsWith(prefix))
++    throw new Error("Prime host dispatch is still owned");
++  for (const key of ownedConnections.keys()) if (key.startsWith(prefix))
++    throw new Error("Prime host connection is still owned");
++}
++
++function trustedStoppedTerminal(result: Record<string, unknown> | null | undefined, authority: PrimeRuntimeAuthority, terminalReceiptId: string) {
++  if (!result || result.outcome !== "uncertain") throw new Error("Original Prime terminal outcome is not uncertain");
++  const session = result.session;
++  const settlement = result.settlement;
++  const route = result.route;
++  if (!session || typeof session !== "object" || Array.isArray(session) ||
++      !settlement || typeof settlement !== "object" || Array.isArray(settlement) ||
++      !route || typeof route !== "object" || Array.isArray(route))
++    throw new Error("Original Prime terminal proof is missing");
++  const saved = session as Record<string, unknown>, proof = settlement as Record<string, unknown>;
++  const selected = route as Record<string, unknown>;
++  if (selected.provider !== "openai-codex" || selected.billingType !== "subscription" ||
++      selected.model !== authority.selection.model ||
++      saved.version !== 3 || saved.runId !== authority.identity.runId ||
++      saved.companyId !== authority.identity.companyId || saved.agentId !== authority.identity.agentId ||
++      saved.issueId !== authority.identity.issueId || saved.workspaceId !== authority.workspace.id ||
++      saved.executionWorkspaceId !== authority.workspace.executionWorkspaceId ||
++      saved.workspaceRoot !== authority.workspace.realRoot || saved.namespace !== authority.session.namespace ||
++      saved.model !== authority.selection.model || saved.connectionId !== authority.selection.connectionId ||
++      typeof saved.primeSessionId !== "string" || !saved.primeSessionId ||
++      saved.lastReceiptId !== terminalReceiptId || saved.checkpoint !== null || saved.checkpointDigest !== null ||
++      proof.provider !== "settled" ||
++      proof.governedActions !== "settled" && proof.governedActions !== "uncertain" ||
++      proof.worker !== "stopped" || proof.descendants !== "stopped" ||
++      !Array.isArray(proof.evidence) || proof.evidence.length === 0 ||
++      !proof.evidence.every((item) => typeof item === "string" && item.trim().length > 0))
++    throw new Error("Original Prime terminal does not prove stopped worker and provider");
++  return primeDigest(result);
++}
 +
 +/** Known live dispatches may overlap for native children; unresolved ownership never may. */
 +export function primeEffectBlocksExecution(method: string, state: string, owned: boolean): boolean {
@@ -12216,13 +12319,129 @@ index 0000000..274abc4
 +      return { authority, authorityDigest: stored.digest, capabilityPurpose: purpose, projection: await projection(db, stored) };
 +    },
 +    async *request(runId: string, bearer: string, raw: unknown): AsyncGenerator<PrimeBrokerFrame> {
-+      const { stored, authority, purpose } = await load(runId, bearer);
 +      const request = primeBrokerRequestSchema.parse(raw);
++      const { stored, authority, purpose } = await load(runId, bearer,
++        request.payload.method === "effect.non_admission" ||
++        request.payload.method === "operation.reconcile_worker" ? "control" : undefined);
 +      if (stored.digest !== request.authorityDigest || authority.operationId !== request.operationId || authority.identity.runId !== runId) throw new Error("Prime authority binding mismatch");
 +      const payload = request.payload;
 +      const method = payload.method;
 +      if ((executeMethods[method] && purpose !== "execute") || (controlMethods[method] && purpose !== "control")) throw new Error("Prime capability purpose mismatch");
 +      const argumentsHash = primeDigest({ authorityDigest: request.authorityDigest, operationId: request.operationId, payload: request.payload });
++      if (method === "effect.non_admission" || method === "operation.reconcile_worker") {
++        // No dispatch phase: the negative assertion and its receipt commit together.
++        const frame = await db.transaction(async (tx) => {
++          // Physical admission takes this advisory lock before row locks.
++          if (method === "operation.reconcile_worker")
++            await tx.execute(sql`select pg_advisory_xact_lock(hashtext('prime_physical_writers'))`);
++          const [current] = await tx.select().from(primeRuntimeAuthorities)
++            .where(eq(primeRuntimeAuthorities.runId, runId)).for("update");
++          if (!current || current.digest !== request.authorityDigest ||
++              current.operationId !== request.operationId ||
++              primeDigest(primeRuntimeAuthoritySchema.parse(current.authority)) !== current.digest)
++            throw new Error("Prime observation authority changed");
++          const [prior] = await tx.select().from(primeBrokerRequests)
++            .where(and(eq(primeBrokerRequests.runId, runId), eq(primeBrokerRequests.requestId, request.requestId)));
++          if (prior) {
++            if (prior.method !== method || prior.argumentsHash !== argumentsHash || prior.state !== "completed")
++              throw new Error("Prime observation ID conflicts with durable proof");
++            const [receipt] = await tx.select().from(primeBrokerReceipts)
++              .where(and(eq(primeBrokerReceipts.runId, runId), eq(primeBrokerReceipts.requestId, request.requestId)))
++              .orderBy(desc(primeBrokerReceipts.sequence)).limit(1);
++            const replay = primeBrokerFrameSchema.parse(receipt?.frame);
++            if (prior.nextSequence !== 1 || replay.requestId !== request.requestId ||
++                replay.sequence !== 0 || replay.kind !== "result" || (method === "effect.non_admission"
++                  ? replay.result.kind !== "non_admission" || replay.result.proofRequestId !== request.requestId
++                  : replay.result.kind !== "worker_reconciliation" || replay.result.proofRequestId !== request.requestId))
++              throw new Error("Prime observation receipt continuity lost");
++            return replay;
++          }
++          if (current.fenced !== "stopped" || current.providerSettlement !== "settled" ||
++              current.governedSettlement !== "settled")
++            throw new Error("Prime observation requires stopped settled authority");
++          const rows = await tx.select().from(primeBrokerRequests).where(eq(primeBrokerRequests.runId, runId));
++          if (rows.some((row) => effectMethods[row.method] && !terminalStates[row.state]))
++            throw new Error("Prime observation requires all admitted effects settled");
++          let result: PrimeBrokerResult;
++          if (payload.method === "effect.non_admission") {
++            if (payload.targetRequestId === request.requestId ||
++                rows.some((row) => row.requestId === payload.targetRequestId) ||
++                ownedDispatches.has(dispatchKey(runId, payload.targetRequestId)) ||
++                ownedPaperclipEffects.has(dispatchKey(runId, payload.targetRequestId)))
++              throw new Error("Target Paperclip request was admitted or is owned");
++            result = { kind: "non_admission", state: "not_admitted", operationId: request.operationId,
++              runId, authorityDigest: current.digest, targetRequestId: payload.targetRequestId,
++              targetRequestDigest: payload.targetRequestDigest, targetMethod: payload.targetMethod,
++              fence: "stopped", proofRequestId: request.requestId };
++          } else {
++            if (payload.method !== "operation.reconcile_worker") throw new Error("Unexpected observation method");
++            noActiveHostWork(runId);
++            if (current.finalizationIntent || current.finalizationReceiptId || current.finalizationAppliedAt ||
++                current.workerSettlement !== "pending" || rows.some((row) => row.method === "paperclip.finish"))
++              throw new Error("Prime worker handoff has finalization or prior settlement");
++            const [run] = await tx.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId)).for("update");
++            if (!run || run.status !== "failed" && run.status !== "cancelled" || !run.finishedAt ||
++                run.companyId !== authority.identity.companyId || run.agentId !== authority.identity.agentId ||
++                run.controllerBootId !== authority.identity.controllerId ||
++                run.responsibleUserId !== authority.identity.responsibleUserId)
++              throw new Error("Original Prime host run is not a matching failed terminal");
++            const terminalDigest = trustedStoppedTerminal(run.resultJson, authority, payload.terminalReceiptId);
++            const proofs = rows.filter((row) => row.method === "effect.non_admission" && row.state === "completed");
++            if (!proofs.length) throw new Error("Prime worker handoff requires durable non-admission proof");
++            const targets = new Set<string>();
++            for (const proof of proofs) {
++              const [saved] = await tx.select().from(primeBrokerReceipts)
++                .where(and(eq(primeBrokerReceipts.runId, runId), eq(primeBrokerReceipts.requestId, proof.requestId)))
++                .orderBy(desc(primeBrokerReceipts.sequence)).limit(1);
++              const observed = primeBrokerFrameSchema.parse(saved?.frame);
++              if (observed.kind !== "result" || observed.result.kind !== "non_admission")
++                throw new Error("Prime worker handoff non-admission ledger is inconsistent");
++              const nonAdmission = observed.result;
++              if (proof.nextSequence !== 1 ||
++                  observed.requestId !== proof.requestId || observed.sequence !== 0 ||
++                  nonAdmission.proofRequestId !== proof.requestId ||
++                  nonAdmission.operationId !== request.operationId ||
++                  nonAdmission.runId !== runId || nonAdmission.authorityDigest !== current.digest ||
++                  nonAdmission.fence !== "stopped" ||
++                  proof.argumentsHash !== primeDigest({ authorityDigest: current.digest,
++                    operationId: request.operationId, payload: { method: "effect.non_admission",
++                      targetRequestId: nonAdmission.targetRequestId,
++                      targetRequestDigest: nonAdmission.targetRequestDigest,
++                      targetMethod: nonAdmission.targetMethod } }) ||
++                  rows.some((row) => row.requestId === nonAdmission.targetRequestId) ||
++                  ownedDispatches.has(dispatchKey(runId, nonAdmission.targetRequestId)))
++                throw new Error("Prime worker handoff non-admission ledger is inconsistent");
++              targets.add(primeDigest([nonAdmission.targetRequestId, nonAdmission.targetRequestDigest]));
++            }
++            if (targets.size !== 1) throw new Error("Prime worker handoff target is ambiguous");
++            const writers = await tx.select().from(primePhysicalWriters)
++              .where(eq(primePhysicalWriters.runId, runId)).for("update");
++            if (writers.length !== 1 || !writers[0].prime ||
++                writers[0].root !== authority.workspace.realRoot)
++              throw new Error("Matching Prime physical writer reservation is missing or ambiguous");
++            noActiveHostWork(runId);
++            result = { kind: "worker_reconciliation", state: "settled", operationId: request.operationId,
++              runId, authorityDigest: current.digest, terminalReceiptId: payload.terminalReceiptId,
++              terminalDigest, worker: "stopped", descendants: "stopped", proofRequestId: request.requestId };
++            await tx.update(primeRuntimeAuthorities).set({ workerSettlement: "settled", updatedAt: new Date() })
++              .where(eq(primeRuntimeAuthorities.runId, runId));
++            await tx.delete(primePhysicalWriters).where(and(eq(primePhysicalWriters.runId, runId),
++              eq(primePhysicalWriters.root, authority.workspace.realRoot), eq(primePhysicalWriters.prime, true)));
++          }
++          const stamped: PrimeBrokerFrame = { version: 2, requestId: request.requestId, sequence: 0,
++            kind: "result", result };
++          assertPrimeFrameSize(stamped);
++          await tx.insert(primeBrokerRequests).values({
++            runId, requestId: request.requestId, method, argumentsHash, state: "completed", nextSequence: 1,
++          });
++          await tx.insert(primeBrokerReceipts).values({
++            runId, requestId: request.requestId, sequence: 0, frame: stamped,
++          });
++          return stamped;
++        });
++        yield frame;
++        return;
++      }
 +      if (method === "provider.stream" && request.payload.method === "provider.stream") {
 +        if (request.payload.turnId !== authority.turnId) throw new Error("Prime turn identity mismatch");
 +        restrictResponseRequest(request.payload.request, authority);
@@ -12325,10 +12544,10 @@ index 0000000..274abc4
 +}
 diff --git 1/server/src/services/prime-credential-ownership.postgres.test.ts 2/server/src/services/prime-credential-ownership.postgres.test.ts
 new file mode 100644
-index 0000000..f86e9a2
+index 0000000..a750bc3
 --- /dev/null
 +++ 2/server/src/services/prime-credential-ownership.postgres.test.ts
-@@ -0,0 +1,441 @@
+@@ -0,0 +1,735 @@
 +import { randomUUID } from "node:crypto";
 +import { chmod, mkdtemp, readdir, rm } from "node:fs/promises";
 +import { tmpdir } from "node:os";
@@ -12336,17 +12555,17 @@ index 0000000..f86e9a2
 +import { eq } from "drizzle-orm";
 +import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 +import {
-+  agents, companyMemberships, companies, createDb, executionWorkspaces, heartbeatRuns,
-+  issues, primeBrokerRequests, primeRuntimeAuthorities, projects, type Db,
-+  type EmbeddedPostgresTestDatabase,
++  agents, companyMemberships, companies, connectionGrants, createDb, executionWorkspaces, heartbeatRuns,
++  issues, primeBrokerReceipts, primeBrokerRequests, primePhysicalWriters, primeRuntimeAuthorities, projects,
++  toolApplications, toolConnections, toolConnectionInstalls, type Db, type EmbeddedPostgresTestDatabase,
 +} from "@paperclipai/db";
 +import type { ManagedAiCredentialLifecycle } from "@paperclipai/adapter-utils";
-+import type { PrimeBrokerFrame, PrimeBrokerRequest } from "@paperclipai/shared";
++import { primeBrokerFrameSchema, primeBrokerRequestSchema, type PrimeBrokerFrame, type PrimeBrokerRequest } from "@paperclipai/shared";
 +import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "../__tests__/helpers/embedded-postgres.js";
 +import { aiConnectionService } from "./ai-connections.js";
 +import { prepareManagedAiRuntime } from "./ai-connection-runtime.js";
 +import { primeBrokerService, registerPrimeHostRun } from "./prime-broker.js";
-+import { issuePrimeAuthority, primeDigest } from "./prime-runtime-authority.js";
++import { assertPrimeExecuteCurrent, issuePrimeAuthority, primeDigest } from "./prime-runtime-authority.js";
 +import { legacyControllerBootId } from "./legacy-controller-lease.js";
 +import { assertNoHeldPrimeWorkspace } from "./prime-workspace-safety.js";
 +import { logger } from "../middleware/logger.js";
@@ -12422,7 +12641,7 @@ index 0000000..f86e9a2
 +    vi.unstubAllEnvs();
 +  });
 +
-+  async function fixture() {
++  async function fixture(withGithub = false) {
 +    const companyId = randomUUID(), agentId = randomUUID(), issueId = randomUUID(), runId = randomUUID();
 +    const userId = `prime-owner-${randomUUID()}`;
 +    const root = await mkdtemp(path.join(tmpdir(), "prime-credential-workspace-"));
@@ -12453,6 +12672,26 @@ index 0000000..f86e9a2
 +      } }));
 +    const runtime = await prepareManagedAiRuntime(db, { companyId, agentId, runId, responsibleUserId: userId,
 +      adapterType: "prime_bff", binding, config: { model: "fixture-model", cwd: root } });
++    let githubGrantId: string | null = null;
++    if (withGithub) {
++      const [application] = await db.insert(toolApplications).values({ companyId,
++        applicationKey: `github-${randomUUID()}`, name: "GitHub fixture",
++        type: "mcp_http", status: "active", metadata: { sourceTemplateKey: "github" } }).returning();
++      const [connection] = await db.insert(toolConnections).values({ companyId,
++        applicationId: application.id, uid: `github/${randomUUID()}`, name: "GitHub fixture",
++        transport: "mcp_remote", credentialPolicy: "per_user", status: "active", enabled: true,
++        healthStatus: "ok", transportConfig: { sourceTemplateKey: "github" } }).returning();
++      const [grant] = await db.insert(connectionGrants).values({ companyId,
++        connectionId: connection.id, kind: "user", subjectUserId: userId, status: "active",
++        providerTenant: { github: { userId: "123", login: "fixture",
++          installationCount: 1, repositoryCount: 1, repositorySelection: "selected",
++          installationIds: ["installation-a"], installationOwnerLogins: ["fixture"],
++          repositories: [{ id: "repository-a", fullName: "fixture/first", installationId: "installation-a" }],
++          accessRevision: randomUUID(), lastAccessRefreshAt: new Date().toISOString() } } }).returning();
++      githubGrantId = grant.id;
++      await db.insert(toolConnectionInstalls).values({ companyId, connectionId: connection.id,
++        targetType: "agent", targetId: agentId });
++    }
 +    const issued = await issuePrimeAuthority(db, { companyId, agentId, issueId, runId,
 +      controllerId: legacyControllerBootId, responsibleUserId: userId, workspaceId: workspace.id,
 +      executionWorkspaceId: workspace.id, workspaceRoot: root, prompt: "Fixture request",
@@ -12470,11 +12709,285 @@ index 0000000..f86e9a2
 +      const [authority] = await db.select().from(primeRuntimeAuthorities).where(eq(primeRuntimeAuthorities.runId, runId));
 +      return authority;
 +    };
-+    return { companyId, userId, accountId, runId, root, ai, runtime, issued, request, stream, state,
++    return { companyId, userId, accountId, runId, root, ai, runtime, issued, githubGrantId, request, stream, state,
 +      register: (credential: ManagedAiCredentialLifecycle = runtime.managedAiCredential!) =>
 +        registerPrimeHostRun(runId, { credential, agentToken: "fixture-actor", apiBaseUrl: "http://127.0.0.1:1" }),
 +    };
 +  }
++
++  it("ignores GitHub refresh-only metadata but fences real repo, installation, status and policy revocation", async () => {
++    const f = await fixture(true);
++    try {
++      const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, f.githubGrantId!));
++      const original = grant.providerTenant!;
++      const github = original.github!;
++      await assertPrimeExecuteCurrent(db, f.issued.authority);
++      await db.update(connectionGrants).set({ providerTenant: { ...original, github: { ...github,
++        accessRevision: randomUUID(), lastAccessRefreshAt: new Date(Date.now() + 1000).toISOString(),
++      } } }).where(eq(connectionGrants.id, grant.id));
++      await assertPrimeExecuteCurrent(db, f.issued.authority);
++      const changed = [
++        { ...github, repositories: [{ id: "repository-b", fullName: "fixture/replacement", installationId: "installation-a" }] },
++        { ...github, repositories: [] },
++        { ...github, installationIds: ["installation-b"] },
++        { ...github, repositorySelection: "all" as const },
++      ];
++      for (const mutation of changed) {
++        await db.update(connectionGrants).set({ providerTenant: { ...original, github: mutation } })
++          .where(eq(connectionGrants.id, grant.id));
++        await expect(assertPrimeExecuteCurrent(db, f.issued.authority)).rejects.toThrow();
++        await db.update(connectionGrants).set({ providerTenant: original }).where(eq(connectionGrants.id, grant.id));
++        await assertPrimeExecuteCurrent(db, f.issued.authority);
++      }
++      const [install] = await db.select().from(toolConnectionInstalls)
++        .where(eq(toolConnectionInstalls.connectionId, grant.connectionId));
++      await db.delete(toolConnectionInstalls).where(eq(toolConnectionInstalls.id, install.id));
++      await expect(assertPrimeExecuteCurrent(db, f.issued.authority)).rejects.toThrow();
++      await db.insert(toolConnectionInstalls).values({ id: install.id, companyId: f.companyId,
++        connectionId: grant.connectionId, targetType: "agent", targetId: f.issued.authority.identity.agentId });
++      await assertPrimeExecuteCurrent(db, f.issued.authority);
++      await db.update(toolConnections).set({ enabled: false }).where(eq(toolConnections.id, grant.connectionId));
++      await expect(assertPrimeExecuteCurrent(db, f.issued.authority)).rejects.toThrow();
++      await db.update(toolConnections).set({ enabled: true }).where(eq(toolConnections.id, grant.connectionId));
++      await assertPrimeExecuteCurrent(db, f.issued.authority);
++      await db.update(connectionGrants).set({ status: "revoked" }).where(eq(connectionGrants.id, grant.id));
++      await expect(assertPrimeExecuteCurrent(db, f.issued.authority)).rejects.toThrow();
++    } finally {
++      await f.runtime.cleanup();
++    }
++  }, 90_000);
++
++  async function stoppedFixture() {
++    const f = await fixture();
++    const authority = f.issued.authority;
++    const terminalReceiptId = randomUUID();
++    const resultJson = {
++      outcome: "uncertain",
++      settlement: { provider: "settled", governedActions: "uncertain", worker: "stopped",
++        descendants: "stopped", evidence: ["correlated provider terminal", "owned process group exited"] },
++      route: { provider: "openai-codex", model: authority.selection.model, billingType: "subscription" },
++      session: { version: 3, companyId: authority.identity.companyId, agentId: authority.identity.agentId,
++        issueId: authority.identity.issueId, runId: f.runId,
++        workspaceId: authority.workspace.id, executionWorkspaceId: authority.workspace.executionWorkspaceId,
++        workspaceRoot: authority.workspace.realRoot, namespace: authority.session.namespace,
++        model: authority.selection.model, connectionId: authority.selection.connectionId,
++        primeSessionId: randomUUID(), checkpoint: null, checkpointDigest: null,
++        lastReceiptId: terminalReceiptId },
++    };
++    await db.insert(primePhysicalWriters).values({ runId: f.runId, root: f.root, prime: true });
++    await db.update(heartbeatRuns).set({ status: "failed", finishedAt: new Date(),
++      resultJson, error: "Original failed run" })
++      .where(eq(heartbeatRuns.id, f.runId));
++    await db.update(primeRuntimeAuthorities).set({ fenced: "stopped" })
++      .where(eq(primeRuntimeAuthorities.runId, f.runId));
++    const broker = primeBrokerService(db, (async () => {
++      throw new Error("Control observation must never dispatch the original effect");
++    }) as typeof fetch);
++    const targetRequestId = randomUUID();
++    const original = f.request(targetRequestId, { method: "paperclip.request", httpMethod: "PUT",
++      path: `/api/issues/${authority.identity.issueId}`, body: { status: "done" } });
++    const targetRequestDigest = primeDigest(original);
++    const observe = (requestId = randomUUID()) => f.request(requestId,
++      { method: "effect.non_admission", targetRequestId, targetRequestDigest, targetMethod: "paperclip.request" });
++    const reconcile = (requestId = randomUUID()) => f.request(requestId,
++      { method: "operation.reconcile_worker", terminalReceiptId });
++    return { f, broker, resultJson, terminalReceiptId, original, targetRequestId,
++      targetRequestDigest, observe, reconcile };
++  }
++
++  it("persists exact negative-admission proof without admitting or replaying the original PUT", async () => {
++    const { f, broker, targetRequestId, targetRequestDigest, observe } = await stoppedFixture();
++    try {
++      const observation = observe();
++      const frames = await consume(broker.request(f.runId, f.issued.controlCapability, observation));
++      expect(frames).toEqual([{ version: 2, requestId: observation.requestId, sequence: 0,
++        kind: "result", result: { kind: "non_admission", state: "not_admitted",
++          operationId: f.runId, runId: f.runId, authorityDigest: f.issued.authorityDigest,
++          targetRequestId, targetRequestDigest, targetMethod: "paperclip.request",
++          fence: "stopped", proofRequestId: observation.requestId } }]);
++      expect(primeBrokerFrameSchema.parse(frames[0])).toEqual(frames[0]);
++      expect(primeBrokerRequestSchema.parse(observation)).toEqual(observation);
++      expect(await consume(broker.request(f.runId, f.issued.controlCapability, observation))).toEqual(frames);
++      await expect(consume(broker.request(f.runId, f.issued.controlCapability, {
++        ...observation, payload: { ...observation.payload, targetRequestDigest: "b".repeat(64) },
++      }))).rejects.toThrow(/conflicts/);
++      const requests = await db.select().from(primeBrokerRequests).where(eq(primeBrokerRequests.runId, f.runId));
++      expect(requests.map((row) => row.requestId)).toEqual([observation.requestId]);
++      expect(requests[0]).toMatchObject({ method: "effect.non_admission", state: "completed", nextSequence: 1 });
++      expect((await db.select().from(primeBrokerReceipts).where(eq(primeBrokerReceipts.runId, f.runId)))).toHaveLength(1);
++      expect((await f.state())).toMatchObject({ fenced: "stopped", workerSettlement: "pending" });
++    } finally {
++      await f.runtime.cleanup();
++    }
++  }, 90_000);
++
++  it("rejects unproven keys, admitted targets, open/uncertain fences and unsettled other effects", async () => {
++    const { f, broker, targetRequestId, observe } = await stoppedFixture();
++    try {
++      const bad = observe();
++      await expect(consume(broker.request(f.runId, f.issued.executeCapability, bad))).rejects.toThrow(/purpose/);
++      await expect(consume(broker.request(f.runId, f.issued.controlCapability,
++        { ...bad, authorityDigest: "0".repeat(64) }))).rejects.toThrow(/binding/);
++      await db.update(primeRuntimeAuthorities).set({ fenced: "open" }).where(eq(primeRuntimeAuthorities.runId, f.runId));
++      await expect(consume(broker.request(f.runId, f.issued.controlCapability, bad))).rejects.toThrow(/stopped/);
++      await db.update(primeRuntimeAuthorities).set({ fenced: "uncertain" }).where(eq(primeRuntimeAuthorities.runId, f.runId));
++      await expect(consume(broker.request(f.runId, f.issued.controlCapability, bad))).rejects.toThrow(/stopped/);
++      await db.update(primeRuntimeAuthorities).set({ fenced: "stopped" }).where(eq(primeRuntimeAuthorities.runId, f.runId));
++      for (const state of ["reserved", "uncertain", "completed", "failed", "aborted"]) {
++        await db.insert(primeBrokerRequests).values({ runId: f.runId, requestId: targetRequestId,
++          method: "paperclip.request", argumentsHash: primeDigest(state), state });
++        await expect(consume(broker.request(f.runId, f.issued.controlCapability, bad))).rejects.toThrow();
++        await db.delete(primeBrokerRequests).where(eq(primeBrokerRequests.requestId, targetRequestId));
++      }
++      const pendingId = randomUUID();
++      await db.insert(primeBrokerRequests).values({ runId: f.runId, requestId: pendingId,
++        method: "mcp.tools.call", argumentsHash: primeDigest(pendingId), state: "uncertain" });
++      await expect(consume(broker.request(f.runId, f.issued.controlCapability, bad))).rejects.toThrow(/settled/);
++      expect(await db.select().from(primeBrokerRequests).where(eq(primeBrokerRequests.requestId, bad.requestId))).toEqual([]);
++      expect((await f.state()).workerSettlement).toBe("pending");
++      await db.delete(primeBrokerRequests).where(eq(primeBrokerRequests.requestId, pendingId));
++      await db.insert(primeBrokerRequests).values({ runId: f.runId, requestId: targetRequestId,
++        method: "paperclip.request", argumentsHash: primeDigest("dispatching"), state: "dispatching" });
++      await expect(consume(broker.request(f.runId, f.issued.controlCapability, bad))).rejects.toThrow();
++      expect(await db.select().from(primeBrokerRequests).where(eq(primeBrokerRequests.requestId, bad.requestId))).toEqual([]);
++    } finally {
++      await f.runtime.cleanup();
++    }
++  }, 90_000);
++
++  it("linearizes the negative assertion behind a concurrently admitted target", async () => {
++    const { f, broker, original, observe } = await stoppedFixture();
++    const admitted = deferred<void>(), commit = deferred<void>();
++    try {
++      const insertion = db.transaction(async (tx) => {
++        await tx.select().from(primeRuntimeAuthorities).where(eq(primeRuntimeAuthorities.runId, f.runId)).for("update");
++        await tx.insert(primeBrokerRequests).values({ runId: f.runId, requestId: original.requestId,
++          method: "paperclip.request", state: "completed", argumentsHash: primeDigest({
++            authorityDigest: original.authorityDigest, operationId: original.operationId, payload: original.payload,
++          }) });
++        admitted.resolve();
++        await commit.promise;
++      });
++      await admitted.promise;
++      const observation = consume(broker.request(f.runId, f.issued.controlCapability, observe()));
++      commit.resolve();
++      await insertion;
++      await expect(observation).rejects.toThrow(/admitted/);
++      expect((await db.select().from(primeBrokerRequests).where(eq(primeBrokerRequests.runId, f.runId))))
++        .toHaveLength(1);
++    } finally {
++      commit.resolve();
++      await f.runtime.cleanup();
++    }
++  }, 90_000);
++
++  it("hands off only the original matching stopped worker, preserves its failure, and releases only its writer", async () => {
++    const { f, broker, resultJson, terminalReceiptId, observe, reconcile } = await stoppedFixture();
++    const unrelatedRunId = randomUUID();
++    await db.insert(heartbeatRuns).values({ id: unrelatedRunId, companyId: f.companyId,
++      agentId: f.issued.authority.identity.agentId, status: "failed" });
++    await db.insert(primePhysicalWriters).values({
++      runId: unrelatedRunId, root: `${f.root}/other-hold`, prime: true,
++    });
++    try {
++      const absent = observe();
++      const negative = (await consume(broker.request(f.runId, f.issued.controlCapability, absent)))[0];
++      const worker = reconcile();
++      const frames = await consume(broker.request(f.runId, f.issued.controlCapability, worker));
++      expect(frames).toEqual([{ version: 2, requestId: worker.requestId, sequence: 0,
++        kind: "result", result: { kind: "worker_reconciliation", state: "settled", operationId: f.runId,
++          runId: f.runId, authorityDigest: f.issued.authorityDigest, terminalReceiptId,
++          terminalDigest: primeDigest(resultJson), worker: "stopped", descendants: "stopped",
++          proofRequestId: worker.requestId } }]);
++      expect(await consume(broker.request(f.runId, f.issued.controlCapability, worker))).toEqual(frames);
++      expect((await db.select().from(primeBrokerReceipts).where(eq(primeBrokerReceipts.runId, f.runId)))).toHaveLength(2);
++      expect((await consume(broker.request(f.runId, f.issued.controlCapability, absent)))[0]).toEqual(negative);
++      expect((await f.state())).toMatchObject({ fenced: "stopped", workerSettlement: "settled",
++        providerSettlement: "settled", governedSettlement: "settled", finalizationIntent: null });
++      expect((await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, f.runId)))[0])
++        .toMatchObject({ status: "failed", error: "Original failed run", resultJson });
++      expect(await db.select().from(primePhysicalWriters).where(eq(primePhysicalWriters.runId, f.runId))).toEqual([]);
++      expect(await db.select().from(primePhysicalWriters).where(eq(primePhysicalWriters.runId, unrelatedRunId)))
++        .toHaveLength(1);
++      await expect(assertNoHeldPrimeWorkspace(db, null, f.root)).rejects.toThrow();
++    } finally {
++      await f.runtime.cleanup();
++    }
++  }, 90_000);
++
++  it("retains worker and physical hold for missing, lying or ambiguous original proof", async () => {
++    const { f, broker, resultJson, observe, reconcile } = await stoppedFixture();
++    const attempt = reconcile();
++    const handoff = () => consume(broker.request(f.runId, f.issued.controlCapability, attempt));
++    try {
++      await expect(handoff()).rejects.toThrow(/non-admission/);
++      const proof = observe();
++      await consume(broker.request(f.runId, f.issued.controlCapability, proof));
++      const unregister = f.register();
++      try {
++        await expect(handoff()).rejects.toThrow(/owned/);
++      } finally {
++        await unregister();
++      }
++      await expect(consume(broker.request(f.runId, f.issued.controlCapability,
++        f.request(randomUUID(), { method: "operation.reconcile_worker", terminalReceiptId: "forged" }))))
++        .rejects.toThrow(/terminal/);
++      const variants = [
++        { ...resultJson, outcome: "completed" },
++        { ...resultJson, settlement: { ...resultJson.settlement, provider: "uncertain" } },
++        { ...resultJson, settlement: { ...resultJson.settlement, descendants: "unknown" } },
++        { ...resultJson, route: { ...resultJson.route, model: "other-model" } },
++        { ...resultJson, settlement: { ...resultJson.settlement, evidence: [] } },
++        { ...resultJson, session: { ...resultJson.session, checkpoint: "untrusted-checkpoint" } },
++        { ...resultJson, session: { ...resultJson.session, connectionId: randomUUID() } },
++      ];
++      for (const changed of variants) {
++        await db.update(heartbeatRuns).set({ resultJson: changed }).where(eq(heartbeatRuns.id, f.runId));
++        await expect(handoff()).rejects.toThrow();
++      }
++      await db.update(heartbeatRuns).set({ resultJson }).where(eq(heartbeatRuns.id, f.runId));
++      await db.update(primeRuntimeAuthorities).set({ governedSettlement: "uncertain" })
++        .where(eq(primeRuntimeAuthorities.runId, f.runId));
++      await expect(handoff()).rejects.toThrow(/settled/);
++      await db.update(primeRuntimeAuthorities).set({ governedSettlement: "settled",
++        finalizationIntent: { intentId: randomUUID(), issueId: f.issued.authority.identity.issueId,
++          status: "done", summary: "Never applied" } }).where(eq(primeRuntimeAuthorities.runId, f.runId));
++      await expect(handoff()).rejects.toThrow(/finalization/);
++      await db.update(primeRuntimeAuthorities).set({ finalizationIntent: null })
++        .where(eq(primeRuntimeAuthorities.runId, f.runId));
++      await db.update(primeRuntimeAuthorities).set({ finalizationReceiptId: randomUUID() })
++        .where(eq(primeRuntimeAuthorities.runId, f.runId));
++      await expect(handoff()).rejects.toThrow(/finalization/);
++      await db.update(primeRuntimeAuthorities).set({ finalizationReceiptId: null,
++        finalizationAppliedAt: new Date() }).where(eq(primeRuntimeAuthorities.runId, f.runId));
++      await expect(handoff()).rejects.toThrow(/finalization/);
++      await db.update(primeRuntimeAuthorities).set({ finalizationAppliedAt: null })
++        .where(eq(primeRuntimeAuthorities.runId, f.runId));
++      await db.update(heartbeatRuns).set({ status: "running" }).where(eq(heartbeatRuns.id, f.runId));
++      await expect(handoff()).rejects.toThrow(/failed terminal/);
++      await db.update(heartbeatRuns).set({ status: "failed" }).where(eq(heartbeatRuns.id, f.runId));
++      await db.insert(primePhysicalWriters).values({ runId: f.runId,
++        root: `${f.root}/additional`, prime: true });
++      await expect(handoff()).rejects.toThrow(/reservation/);
++      await db.delete(primePhysicalWriters).where(eq(primePhysicalWriters.root, `${f.root}/additional`));
++      const pendingId = randomUUID();
++      await db.insert(primeBrokerRequests).values({ runId: f.runId, requestId: pendingId,
++        method: "provider.stream", state: "uncertain", argumentsHash: primeDigest(pendingId) });
++      await expect(handoff()).rejects.toThrow(/settled/);
++      await db.delete(primeBrokerRequests).where(eq(primeBrokerRequests.requestId, pendingId));
++      const competing = f.request(randomUUID(), { method: "effect.non_admission",
++        targetRequestId: randomUUID(), targetRequestDigest: "a".repeat(64), targetMethod: "paperclip.request" });
++      await consume(broker.request(f.runId, f.issued.controlCapability, competing));
++      await expect(handoff()).rejects.toThrow(/ambiguous/);
++      expect((await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, f.runId)))[0])
++        .toMatchObject({ status: "failed", resultJson });
++      expect((await f.state()).workerSettlement).toBe("pending");
++      expect(await db.select().from(primePhysicalWriters).where(eq(primePhysicalWriters.runId, f.runId)))
++        .toHaveLength(1);
++    } finally {
++      await f.runtime.cleanup();
++    }
++  }, 90_000);
 +
 +  it("closes over a pending credential read, then refuses late catalog dispatch", async () => {
 +    const f = await fixture();
@@ -12772,10 +13285,10 @@ index 0000000..f86e9a2
 +});
 diff --git 1/server/src/services/prime-runtime-authority.ts 2/server/src/services/prime-runtime-authority.ts
 new file mode 100644
-index 0000000..d118f1d
+index 0000000..6a49d9e
 --- /dev/null
 +++ 2/server/src/services/prime-runtime-authority.ts
-@@ -0,0 +1,415 @@
+@@ -0,0 +1,420 @@
 +import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 +import { realpath, readFile, readdir, lstat } from "node:fs/promises";
 +import path from "node:path";
@@ -12864,6 +13377,11 @@ index 0000000..d118f1d
 +  sql`(select coalesce(jsonb_agg(${value} order by snapshot_row.id), '[]'::jsonb)
 +    from ${table} snapshot_row where snapshot_row.company_id = ${companyId})`;
 +
++// Refresh identity fences GitHub's metadata writer, not a change in granted access.
++// Keep repository/installation content, revocation and unknown tenant fields pinned.
++const sqlGrantTenant = (tenant: SQL) =>
++  sql`(${tenant} - 'oauth') #- '{github,accessRevision}' #- '{github,lastAccessRefreshAt}'`;
++
 +type MutableGenerations = PrimeRuntimeAuthority["generations"];
 +type SqlDecision = MutableGenerations & { eligible: boolean };
 +
@@ -12889,7 +13407,7 @@ index 0000000..d118f1d
 +    - 'last_catalog_refresh_at' - 'last_error' - 'updated_at'`);
 +  const grants = sqlRows(connectionGrants, companyId, sql`jsonb_build_array(snapshot_row.id,
 +    snapshot_row.connection_id, snapshot_row.kind, snapshot_row.subject_user_id, snapshot_row.subject_agent_id,
-+    snapshot_row.status, snapshot_row.provider_tenant - 'oauth', snapshot_row.credential_secret_refs,
++    snapshot_row.status, ${sqlGrantTenant(sql`snapshot_row.provider_tenant`)}, snapshot_row.credential_secret_refs,
 +    snapshot_row.external_credential)`);
 +  const tools = sqlFingerprint(sql`jsonb_build_array(
 +    ${sqlRows(toolApplications, companyId, sql`to_jsonb(snapshot_row) - 'updated_at'`)},
@@ -12912,7 +13430,7 @@ index 0000000..d118f1d
 +      ${sqlFingerprint(sql`jsonb_build_array(r.status, r.execution_stage, r.runtime_mode,
 +        r.responsible_user_id, r.controller_boot_id, r.active_identity_context_id)`)} as run,
 +      ${sqlFingerprint(sql`jsonb_build_array(g.id, g.status, g.kind, g.subject_user_id,
-+        g.subject_agent_id, g.provider_tenant - 'oauth', g.credential_secret_refs, g.external_credential,
++        g.subject_agent_id, ${sqlGrantTenant(sql`g.provider_tenant`)}, g.credential_secret_refs, g.external_credential,
 +        c.id, c.status, c.enabled, c.health_status, c.config, c.transport, c.connection_purpose,
 +        c.credential_secret_refs, c.external_credential, a.runtime_config,
 +        ${memberships}, ${audience}, ${defaults}, ${installs})`)} as grant,
@@ -13806,3 +14324,425 @@ index 0000000..c5f0ec7
 +    }
 +  }
 +}
+diff --git a/server/src/services/sidebar-badges.ts b/server/src/services/sidebar-badges.ts
+index a53bb36d3e3b04050702fc1926314411d2a7ea02..79dfff0749d16f09ef884ac944aa74d5a99f64fb 100644
+--- a/server/src/services/sidebar-badges.ts
++++ b/server/src/services/sidebar-badges.ts
+@@ -1,11 +1,29 @@
+-import { and, desc, eq, inArray, not } from "drizzle-orm";
++import { and, eq, inArray, not, sql, desc } from "drizzle-orm";
+ import type { Db } from "@paperclipai/db";
+-import { agents, approvals, heartbeatRuns } from "@paperclipai/db";
++import { agents, approvals, heartbeatRuns, issues } from "@paperclipai/db";
+ import { isHeartbeatRunVisibleInMine, type SidebarBadges } from "@paperclipai/shared";
+ 
+ const ACTIONABLE_APPROVAL_STATUSES = ["pending", "revision_requested"];
+ const FAILED_HEARTBEAT_STATUSES = ["failed", "timed_out"];
+ 
++const runIssueReference = sql`coalesce(
++  nullif(btrim(${heartbeatRuns.contextSnapshot}->>'issueId'), ''),
++  nullif(btrim(${heartbeatRuns.contextSnapshot}->>'taskId'), ''),
++  nullif(btrim(${heartbeatRuns.contextSnapshot}->>'taskKey'), '')
++)`;
++
++// Current task disposition changes Inbox actionability, never the run's history.
++export const heartbeatRunSupersededByIssueStateSql = sql<boolean>`case
++  when ${inArray(heartbeatRuns.status, FAILED_HEARTBEAT_STATUSES)} then exists (
++    select 1 from ${issues}
++    where ${issues.companyId} = ${heartbeatRuns.companyId}
++      and (${issues.id}::text = ${runIssueReference} or ${issues.identifier} = ${runIssueReference})
++      and (${inArray(issues.status, ["done", "cancelled"])}
++        or ${issues.assigneeAgentId} is distinct from ${heartbeatRuns.agentId})
++  )
++  else false
++end`;
++
+ function normalizeTimestamp(value: Date | string | null | undefined): number {
+   if (!value) return 0;
+   const timestamp = new Date(value).getTime();
+@@ -52,6 +70,7 @@ export function sidebarBadgeService(db: Db) {
+           runStatus: heartbeatRuns.status,
+           responsibleUserId: heartbeatRuns.responsibleUserId,
+           createdAt: heartbeatRuns.createdAt,
++          supersededByIssueState: heartbeatRunSupersededByIssueStateSql,
+         })
+         .from(heartbeatRuns)
+         .innerJoin(agents, eq(heartbeatRuns.agentId, agents.id))
+@@ -66,6 +85,7 @@ export function sidebarBadgeService(db: Db) {
+ 
+       const failedRuns = latestRunByAgent.filter((row) =>
+         FAILED_HEARTBEAT_STATUSES.includes(row.runStatus)
++        && !row.supersededByIssueState
+         && (extra?.currentUserId === undefined || isHeartbeatRunVisibleInMine(row, extra.currentUserId))
+         && !isDismissed(extra?.dismissals ?? new Map(), `run:${row.id}`, row.createdAt),
+       ).length;
+diff --git a/packages/shared/src/types/heartbeat.ts b/packages/shared/src/types/heartbeat.ts
+index 862a8350511bf942a1fb0bc285bdea0a8a6550a4..6b055d0d59beb66023c40b29d7864dd0a68b99b9 100644
+--- a/packages/shared/src/types/heartbeat.ts
++++ b/packages/shared/src/types/heartbeat.ts
+@@ -223,6 +223,8 @@ export interface HeartbeatRun {
+   createdAt: Date;
+   updatedAt: Date;
+   outputSilence?: HeartbeatRunOutputSilence;
++  /** Read-time Inbox suppression for a closed/reassigned task; not retry authorization. */
++  supersededByIssueState?: boolean;
+   /**
+    * Ephemeral, process-local current status message for an active run. Resolved
+    * from the in-memory runtime status store (never persisted to the database)
+diff --git a/ui/src/lib/inbox.ts b/ui/src/lib/inbox.ts
+index c95b015352c9c18efc94755317bd317689b822dc..460313a697484893c5aafa6264d8ab0af8804c72 100644
+--- a/ui/src/lib/inbox.ts
++++ b/ui/src/lib/inbox.ts
+@@ -741,7 +741,9 @@ export function getLatestFailedRunsByAgent(runs: HeartbeatRun[]): HeartbeatRun[]
+     }
+   }
+ 
+-  return Array.from(latestByAgent.values()).filter((run) => FAILED_RUN_STATUSES.has(run.status));
++  return Array.from(latestByAgent.values()).filter(
++    (run) => FAILED_RUN_STATUSES.has(run.status) && !run.supersededByIssueState,
++  );
+ }
+ 
+ export function normalizeTimestamp(value: string | Date | null | undefined): number {
+diff --git a/ui/src/context/LiveUpdatesProvider.tsx b/ui/src/context/LiveUpdatesProvider.tsx
+index 3a38ad3b479ca93577f3c46338c11a6891134f17..f1fb8c372387d7375afef8f17dd16358eac90358 100644
+--- a/ui/src/context/LiveUpdatesProvider.tsx
++++ b/ui/src/context/LiveUpdatesProvider.tsx
+@@ -1298,6 +1298,13 @@ function invalidateActivityQueries(
+       // An ancestor hold or reparenting changes descendants' effective pause.
+       queryClient.invalidateQueries({ queryKey: ["issues", "tree-control-state"] });
+     }
++    if (
++      action === "issue.updated" &&
++      details &&
++      ("status" in details || "assigneeAgentId" in details)
++    ) {
++      queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(companyId) });
++    }
+     queryClient.invalidateQueries({
+       queryKey: queryKeys.issues.list(companyId),
+     });
+diff --git a/server/src/__tests__/inbox-dismissals.test.ts b/server/src/__tests__/inbox-dismissals.test.ts
+index 937d8b7cc886465f0b6d2d05affede49341a481b..65a90c4b4c160921cfaca334163eca7840dfebc1 100644
+--- a/server/src/__tests__/inbox-dismissals.test.ts
++++ b/server/src/__tests__/inbox-dismissals.test.ts
+@@ -1,5 +1,6 @@
+ import { randomUUID } from "node:crypto";
+ import express from "express";
++import { eq } from "drizzle-orm";
+ import request from "supertest";
+ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+ import {
+@@ -12,6 +13,7 @@ import {
+   inboxDismissals,
+   invites,
+   joinRequests,
++  issues,
+ } from "@paperclipai/db";
+ import {
+   getEmbeddedPostgresTestSupport,
+@@ -22,6 +24,7 @@ import { inboxDismissalRoutes } from "../routes/inbox-dismissals.js";
+ import { inboxDismissalService } from "../services/inbox-dismissals.ts";
+ import { sidebarBadgeRoutes } from "../routes/sidebar-badges.js";
+ import { sidebarBadgeService } from "../services/sidebar-badges.ts";
++import { heartbeatService } from "../services/heartbeat.ts";
+ 
+ const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
+ const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
+@@ -51,6 +54,7 @@ describeEmbeddedPostgres("inbox dismissals", () => {
+     await db.delete(invites);
+     await db.delete(activityLog);
+     await db.delete(heartbeatRuns);
++    await db.delete(issues);
+     await db.delete(approvals);
+     await db.delete(agents);
+     await db.delete(companies);
+@@ -100,6 +104,87 @@ describeEmbeddedPostgres("inbox dismissals", () => {
+     expect(response.body.inbox).toBe(expected);
+   });
+ 
++  it("keeps closed and reassigned task failures in history without reviving older Inbox alerts", async () => {
++    const companyId = randomUUID();
++    const originalAgentId = randomUUID();
++    const replacementAgentId = randomUUID();
++    const issueId = randomUUID();
++    const oldRunId = randomUUID();
++    const runId = randomUUID();
++    await db.insert(companies).values({ id: companyId, name: "Inbox lifecycle", issuePrefix: "LIFE" });
++    await db.insert(agents).values([
++      { id: originalAgentId, companyId, name: "Original", role: "engineer", status: "error" },
++      { id: replacementAgentId, companyId, name: "Replacement", role: "engineer", status: "idle" },
++    ]);
++    await db.insert(issues).values({
++      id: issueId, companyId, title: "Reassigned audit", identifier: "LIFE-1",
++      status: "in_progress", assigneeAgentId: originalAgentId,
++    });
++    await db.insert(heartbeatRuns).values([
++      {
++        id: oldRunId, companyId, agentId: originalAgentId, invocationSource: "manual",
++        status: "failed", createdAt: new Date("2026-03-11T01:00:00Z"),
++      },
++      {
++        id: runId, companyId, agentId: originalAgentId, invocationSource: "assignment",
++        status: "failed", error: "Original setup failure", contextSnapshot: { issueId },
++        createdAt: new Date("2026-03-11T02:00:00Z"),
++      },
++    ]);
++    const heartbeats = heartbeatService(db);
++    expect((await badgesSvc.get(companyId)).failedRuns).toBe(1);
++    for (const summary of [false, true]) {
++      const before = await heartbeats.list(companyId, undefined, 1, { summary });
++      expect(before[0]).toMatchObject({ id: runId, status: "failed", supersededByIssueState: false });
++    }
++    for (const change of [
++      { status: "done", assigneeAgentId: originalAgentId },
++      { status: "cancelled", assigneeAgentId: originalAgentId },
++      { status: "in_progress", assigneeAgentId: replacementAgentId },
++      { status: "todo", assigneeAgentId: null },
++    ]) {
++      await db.update(issues).set(change).where(eq(issues.id, issueId));
++      // Filter after selecting the latest run; the older failure must not resurface.
++      expect((await badgesSvc.get(companyId)).failedRuns).toBe(0);
++      for (const summary of [false, true]) {
++        const history = await heartbeats.list(companyId, undefined, 1, { summary });
++        expect(history[0]).toMatchObject({
++          id: runId, status: "failed", error: "Original setup failure", supersededByIssueState: true,
++        });
++      }
++    }
++    await db.update(issues).set({ status: "in_progress", assigneeAgentId: originalAgentId }).where(eq(issues.id, issueId));
++    expect((await badgesSvc.get(companyId)).failedRuns).toBe(1);
++    expect((await heartbeats.list(companyId, undefined, 1))[0]?.supersededByIssueState).toBe(false);
++    expect((await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId)))[0]).toMatchObject({
++      status: "failed", error: "Original setup failure", contextSnapshot: { issueId },
++    });
++  });
++
++  it.each(["taskId", "taskKey"])("scopes historical %s failure disposition to the run company", async (contextKey) => {
++    const companyId = randomUUID();
++    const otherCompanyId = randomUUID();
++    const agentId = randomUUID();
++    const issueId = randomUUID();
++    await db.insert(companies).values([
++      { id: companyId, name: "Run owner", issuePrefix: "OWN" },
++      { id: otherCompanyId, name: "Unrelated", issuePrefix: "OTHER" },
++    ]);
++    await db.insert(agents).values({ id: agentId, companyId, name: "Owner", role: "engineer" });
++    await db.insert(issues).values({
++      id: issueId, companyId: otherCompanyId, title: "Other company task",
++      identifier: "OTHER-1", status: "done",
++    });
++    const reference = contextKey === "taskId" ? issueId : "OTHER-1";
++    await db.insert(heartbeatRuns).values({
++      companyId, agentId, invocationSource: "manual", status: "timed_out",
++      contextSnapshot: { issueId: " ", [contextKey]: reference },
++    });
++    expect((await badgesSvc.get(companyId)).failedRuns).toBe(1);
++    await db.update(issues).set({ companyId, assigneeAgentId: agentId }).where(eq(issues.id, issueId));
++    expect((await badgesSvc.get(companyId)).failedRuns).toBe(0);
++  });
++
+   it("upserts a single dismissal record per user and inbox item key", async () => {
+     const companyId = randomUUID();
+     const userId = "board-user";
+diff --git a/ui/src/components/ExecutionBlockerNotice.test.tsx b/ui/src/components/ExecutionBlockerNotice.test.tsx
+index 3e8d42b..6ed61b2 100644
+--- a/ui/src/components/ExecutionBlockerNotice.test.tsx
++++ b/ui/src/components/ExecutionBlockerNotice.test.tsx
+@@ -2,81 +2,56 @@
+ import { act, type AnchorHTMLAttributes } from "react";
+ import { createRoot, type Root } from "react-dom/client";
+ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
++import type { ExecutionBlocker } from "@paperclipai/shared";
+ import { ExecutionBlockerNotice } from "./ExecutionBlockerNotice";
+-import { agentsApi } from "../api/agents";
+-import { activityApi } from "../api/activity";
++
+ vi.mock("../lib/router", () => ({
+   Link: ({ to, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { to: string }) => <a href={to} {...props} />,
+ }));
+-vi.mock("../api/agents", () => ({ agentsApi: { retryFailedRun: vi.fn() } }));
+-vi.mock("../api/activity", () => ({ activityApi: { runsForIssue: vi.fn() } }));
+ 
+-describe("stopped task recovery notice", () => {
++describe("execution reconciliation notice", () => {
+   let root: Root;
+   let container: HTMLDivElement;
+-  let client: QueryClient;
+-  const onRetried = vi.fn();
+-  beforeEach(async () => {
+-    vi.clearAllMocks();
+-    container = document.createElement("div"); document.body.append(container);
++  const blocker: ExecutionBlocker = {
++    recoveryActionId: "recovery",
++    runId: "failed-run",
++    agentId: "source-agent",
++    cause: "legacy_execution_requires_reconciliation",
++    nextAction: "Verify the previous action outcome before continuing.",
++  };
++
++  beforeEach(() => {
++    container = document.createElement("div");
++    document.body.append(container);
+     root = createRoot(container);
+-    client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+-    vi.mocked(activityApi.runsForIssue).mockResolvedValue([{ runId: "failed-run", agentId: "agent", status: "failed" }] as never);
+-    await act(async () => root.render(<QueryClientProvider client={client}>
+-      <ExecutionBlockerNotice companyId="company" issueId="task" onRetried={onRetried} blocker={{
+-        recoveryActionId: "recovery", runId: "failed-run", agentId: "agent", cause: "legacy_execution_requires_reconciliation",
+-        nextAction: "Automatic recovery stopped. Recorded work is preserved; actions with unverified outcomes will not be repeated.",
+-      }} />
+-    </QueryClientProvider>));
+-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+   });
+-  afterEach(async () => { await act(async () => root.unmount()); client.clear(); container.remove(); });
+-  it("shows only the requested sentence and Retry, inside a distinct recovery container", () => {
+-    const notice = container.querySelector('[role="status"][aria-label="Task recovery"]')!;
+-    expect(notice.textContent).toBe("Automatic recovery of this task stopped.Retry");
+-    expect(notice.classList.contains("border")).toBe(true);
+-    expect(notice.classList.contains("bg-muted")).toBe(true);
+-    expect(notice.querySelector("a")).toBeNull();
++
++  afterEach(async () => {
++    await act(async () => root.unmount());
++    container.remove();
+   });
+-  it("keeps the required next action for other reconciliation causes", async () => {
+-    await act(async () => root.render(<QueryClientProvider client={client}>
+-      <ExecutionBlockerNotice companyId="company" issueId="task" onRetried={onRetried} blocker={{
+-        recoveryActionId: "recovery", runId: "failed-run", agentId: "agent", cause: "action_outcome_unknown",
+-        nextAction: "Verify the external action outcome before continuing.",
+-      }} />
+-    </QueryClientProvider>));
+-    expect(container.textContent).toContain("Verify the external action outcome before continuing.");
+-    expect(container.textContent).not.toContain("Automatic recovery of this task stopped.");
++
++  async function render(overrides: Partial<ExecutionBlocker> = {}) {
++    await act(async () => root.render(
++      <ExecutionBlockerNotice blocker={{ ...blocker, ...overrides }} />,
++    ));
++  }
++
++  it("offers inspection, not redispatch, for a held legacy failure", async () => {
++    await render();
++    expect(container.querySelector("button")).toBeNull();
++    expect(container.querySelector("a")?.getAttribute("href")).toBe("/agents/source-agent/runs/failed-run");
+   });
+-  it.each(["native_continuation_requires_reconciliation", "native_session_cleanup_quarantined"])("links to the source run instead of offering a retry rejected by %s", async (cause) => {
+-    await act(async () => root.render(<QueryClientProvider client={client}>
+-      <ExecutionBlockerNotice companyId="company" issueId="task" onRetried={onRetried} blocker={{
+-        recoveryActionId: "recovery", runId: "failed-run", agentId: "agent",
+-        cause,
+-        nextAction: "Inspect the original failure and reconcile the previous execution before continuing.",
+-      }} />
+-    </QueryClientProvider>));
+-    expect(container.textContent).toContain("Recovery needed.");
+-    expect(container.textContent).not.toContain("Retry");
+-    const link = container.querySelector("a")!;
+-    expect(link.textContent).toBe("Inspect run");
+-    expect(link.getAttribute("href")).toBe("/agents/agent/runs/failed-run");
+-    expect(agentsApi.retryFailedRun).not.toHaveBeenCalled();
++
++  it("keeps an unfamiliar hold inspectable without granting retry permission", async () => {
++    await render({ cause: "future_execution_hold" });
++    expect(container.querySelector("button")).toBeNull();
++    expect(container.querySelector("a")?.getAttribute("href")).toBe("/agents/source-agent/runs/failed-run");
+   });
+-  it("retries the exact failed run and refreshes the task", async () => {
+-    vi.mocked(agentsApi.retryFailedRun).mockResolvedValue({} as never);
+-    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+-    expect(agentsApi.retryFailedRun).toHaveBeenCalledWith("agent", "failed-run", "company");
+-    expect(onRetried).toHaveBeenCalledOnce();
+-  });
+-  it("shows a failed Retry in the same container and allows another attempt", async () => {
+-    vi.mocked(agentsApi.retryFailedRun).mockRejectedValue(new Error("Environment cleanup is still running."));
+-    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+-    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Environment cleanup is still running.");
+-    expect(container.querySelector<HTMLButtonElement>("button")!.disabled).toBe(false);
+-    expect(onRetried).not.toHaveBeenCalled();
++
++  it.each(["runId", "agentId"] as const)("does not offer an invalid inspection or retry when %s is unavailable", async (field) => {
++    await render({ [field]: null });
++    expect(container.querySelector('[role="status"]')).not.toBeNull();
++    expect(container.querySelector("a, button")).toBeNull();
+   });
+ });
+diff --git a/ui/src/components/ExecutionBlockerNotice.tsx b/ui/src/components/ExecutionBlockerNotice.tsx
+index 527ef3c..602fcea 100644
+--- a/ui/src/components/ExecutionBlockerNotice.tsx
++++ b/ui/src/components/ExecutionBlockerNotice.tsx
+@@ -1,54 +1,17 @@
+-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+ import type { ExecutionBlocker } from "@paperclipai/shared";
+-import { agentsApi } from "../api/agents";
+-import { activityApi } from "../api/activity";
+-import { queryKeys } from "../lib/queryKeys";
+ import { Button } from "./ui/button";
+ import { Link } from "../lib/router";
+ 
+-export function ExecutionBlockerNotice({ companyId, issueId, blocker, onRetried }: {
+-  companyId: string;
+-  issueId: string;
+-  blocker: ExecutionBlocker;
+-  onRetried: () => void;
+-}) {
+-  const queryClient = useQueryClient();
+-  const { data: runs } = useQuery({
+-    queryKey: queryKeys.issues.runs(issueId),
+-    queryFn: () => activityApi.runsForIssue(issueId),
+-  });
+-  const failedRun = runs?.find(run => run.runId === blocker.runId &&
+-    ["failed", "timed_out"].includes(run.status));
+-  const requiresInspection = blocker.cause === "native_continuation_requires_reconciliation" ||
+-    blocker.cause === "native_session_cleanup_quarantined";
+-  const retry = useMutation({
+-    mutationFn: () => agentsApi.retryFailedRun(failedRun!.agentId, failedRun!.runId, companyId),
+-    onSuccess: () => {
+-      onRetried();
+-      for (const queryKey of [queryKeys.issues.detail(issueId), queryKeys.issues.runs(issueId),
+-        queryKeys.issues.liveRuns(issueId), queryKeys.issues.activeRun(issueId)]) {
+-        void queryClient.invalidateQueries({ queryKey });
+-      }
+-    },
+-  });
++// An execution blocker requires reconciliation, never a generic failed-run retry.
++export function ExecutionBlockerNotice({ blocker }: { blocker: ExecutionBlocker }) {
+   return (
+     <div role="status" aria-label="Task recovery" className="mx-(--sz-execution-blocker-inline) my-(--sz-execution-blocker-block) flex flex-wrap items-center justify-between execution-blocker-notice border border-border bg-muted text-foreground">
+-      <span>{blocker.cause === "legacy_execution_requires_reconciliation"
+-        ? "Automatic recovery of this task stopped."
+-        : `${requiresInspection ? "Recovery needed. " : ""}${blocker.nextAction}`}</span>
+-      {requiresInspection && blocker.agentId && blocker.runId && (
++      <span className="min-w-0 flex-1">{blocker.nextAction}</span>
++      {blocker.agentId && blocker.runId && (
+         <Button variant="outline" size="sm" asChild>
+           <Link to={`/agents/${blocker.agentId}/runs/${blocker.runId}`}>Inspect run</Link>
+         </Button>
+       )}
+-      {!requiresInspection && failedRun && (
+-        <Button variant="outline" size="sm" disabled={retry.isPending} onClick={() => retry.mutate()}>
+-          {retry.isPending ? "Retrying…" : "Retry"}
+-        </Button>
+-      )}
+-      {retry.isError && (
+-        <p role="alert" className="w-full text-destructive">{retry.error.message}</p>
+-      )}
+     </div>
+   );
+ }
+diff --git a/ui/src/pages/IssueDetail.tsx b/ui/src/pages/IssueDetail.tsx
+index 672a897..4f635ab 100644
+--- a/ui/src/pages/IssueDetail.tsx
++++ b/ui/src/pages/IssueDetail.tsx
+@@ -7782,7 +7782,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
+               <WorkspaceExportRecovery key={issue.activeRecoveryAction?.id ?? issue.id} issueId={issue.id}
+                 action={issue.activeRecoveryAction ?? null} canManage={canManageBoardRuntime} onQueued={invalidateIssueDetail} />
+               {issue.executionBlocker && (
+-                <ExecutionBlockerNotice companyId={issue.companyId} issueId={issue.id} blocker={issue.executionBlocker} onRetried={invalidateIssueDetail} />
++                <ExecutionBlockerNotice blocker={issue.executionBlocker} />
+               )}
+               {resolvedDetailTab === "chat" ? (
+                 <DispositionRecoveryProvider value={{

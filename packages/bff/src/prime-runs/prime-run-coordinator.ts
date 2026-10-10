@@ -13,9 +13,17 @@ import type {
   PrimeRunStartInput,
   PrimeRunSurface,
   PrimeRunStopResult,
+  PrimeRunReconcileResult,
 } from "./prime-run-port.js";
 import { PrimeRunBoundaryError } from "./prime-run-port.js";
 import type { PrimeRunRepository } from "./prime-run-repository.js";
+import {
+  parsePrimeRestrictedIpcRequest,
+  parsePrimeRestrictedIpcResponse,
+  primeRestrictedIpcDigest,
+  type PrimeNonAdmissionProof,
+  type PrimeWorkerReconciliationProof,
+} from "./prime-restricted-ipc.js";
 
 interface ActiveRun {
   request: PrimeRunRequest;
@@ -418,22 +426,149 @@ export class PrimeRunCoordinator implements PrimeRunSurface {
     if (failed?.status === "rejected") throw failed.reason;
   }
 
+  /** Host observations run only over the sealed original control capability. Never forward the PUT. */
+  private async observeHostProof(
+    operationId: string,
+    requestId: string,
+    payload: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const control = this.controlStore.read(operationId);
+    const owner = this.repository.identity(operationId);
+    if (!control || !owner || control.runId !== owner.runId ||
+      Date.parse(control.controlDeadlineAt) <= Date.now())
+      throw new Error("Original-owner control is unavailable for host proof");
+    const request = {
+      version: 2 as const,
+      operationId,
+      authorityDigest: control.authorityDigest,
+      requestId,
+      payload,
+    };
+    let result: Record<string, unknown> | null = null;
+    for await (const raw of this.verifier.broker(control.runId, control.capability, request)) {
+      if (result !== null) throw new Error("Host emitted a second proof frame");
+      const frame = parsePrimeRestrictedIpcResponse(raw, requestId);
+      if (frame.kind !== "result" || frame.sequence !== 0)
+        throw new Error("Host did not return one durable proof result");
+      result = frame.result;
+    }
+    if (result === null) throw new Error("Host proof was not persisted");
+    return result;
+  }
+
+  private async handoffReconciliation(operationId: string): Promise<PrimeRunReconcileResult> {
+    let receipt = this.repository.reconciliation(operationId);
+    if (!receipt) throw new Error("Original reconciliation receipt is unavailable");
+    if (!receipt.hostHandoff) {
+      const requestId = `reconcile-worker:${receipt.receiptId}`;
+      try {
+        const result = await this.observeHostProof(operationId, requestId, {
+          method: "operation.reconcile_worker",
+          terminalReceiptId: receipt.originalTerminalReceiptId,
+        });
+        if (result.kind !== "worker_reconciliation" || result.state !== "settled" ||
+          result.operationId !== operationId || result.runId !== this.repository.identity(operationId)?.runId ||
+          result.authorityDigest !== receipt.authorityDigest ||
+          result.terminalReceiptId !== receipt.originalTerminalReceiptId ||
+          result.proofRequestId !== requestId || result.worker !== "stopped" ||
+          result.descendants !== "stopped")
+          throw new Error("Host worker reconciliation proof does not match the original operation");
+        receipt = this.repository.appendReconciliationHandoff(
+          operationId, result as unknown as PrimeWorkerReconciliationProof,
+        );
+      } catch {
+        // Local release is durable; the host's independent physical writer remains excluded.
+        return { operationId, outcome: "uncertain", settlement: receipt.settlement,
+          reconciliation: receipt };
+      }
+    }
+    return { operationId, outcome: "stopped", settlement: receipt.settlement,
+      reconciliation: receipt };
+  }
+
   async reconcile(input: {
     bearerToken: string;
     headerRunId: string;
     operationId: string;
-  }): Promise<"stopped" | "not_found" | "uncertain"> {
-    if (!(await this.authorizeControl(input))) return "not_found";
-    const settlement = await this.worker.reconcile(input.operationId);
-    if (settlement === "not_found") {
-      try {
-        await this.recoverRemoteControl(input.operationId, false);
-      } catch {
-        /* Keep the startup-orphan writer fenced. */
+    recovery?: { terminalReceiptId: string; request: unknown };
+  }): Promise<PrimeRunReconcileResult> {
+    const { operationId } = input;
+    const persisted = this.repository.reconciliation(operationId);
+    if ((input.recovery || persisted) && !this.controlStore.read(operationId))
+      throw new PrimeRunBoundaryError("unauthorized", "Original sealed control is required");
+    if (!(await this.authorizeControl(input)))
+      return { operationId, outcome: "not_found", settlement: null, reconciliation: null };
+    if (input.recovery) {
+      let original;
+      try { original = parsePrimeRestrictedIpcRequest(input.recovery.request); }
+      catch { throw new PrimeRunBoundaryError("invalid", "Original broker envelope is invalid"); }
+      const digest = primeRestrictedIpcDigest(original);
+      if (original.payload.method !== "paperclip.request" ||
+        original.payload.httpMethod !== "PUT" || original.operationId !== operationId)
+        throw new PrimeRunBoundaryError("conflict", "Only the original Paperclip PUT may be reconciled");
+      if (persisted && (persisted.originalTerminalReceiptId !== input.recovery.terminalReceiptId ||
+        persisted.originalRequestId !== original.requestId ||
+        persisted.originalRequestDigest !== digest ||
+        persisted.authorityDigest !== original.authorityDigest))
+        throw new PrimeRunBoundaryError("conflict", "Reconciliation conflicts with the original receipt");
+      if (!persisted) {
+        if (this.active.has(operationId) || (await this.worker.reconcile(operationId)) !== "not_found")
+          throw new PrimeRunBoundaryError("conflict", "Original worker or dispatcher still owns the operation");
+        let candidate;
+        try { candidate = this.repository.reconciliationCandidate(operationId); }
+        catch { throw new PrimeRunBoundaryError("conflict", "Original stopped terminal evidence is unavailable"); }
+        const control = this.controlStore.read(operationId);
+        if (candidate.request.identity.runId !== input.headerRunId ||
+          candidate.request.authorityDigest !== original.authorityDigest ||
+          control?.authorityDigest !== original.authorityDigest ||
+          candidate.terminal.receiptId !== input.recovery.terminalReceiptId)
+          throw new PrimeRunBoundaryError("conflict", "Original run, authority or terminal differs");
+        const effect = this.repository.recoveryEffect(operationId, original.requestId);
+        if (effect?.state !== "uncertain" || effect.digest !== digest)
+          throw new PrimeRunBoundaryError("conflict", "Original uncertain request digest is unavailable");
+        const proofRequestId = `non-admission:${createHash("sha256")
+          .update(`${operationId}:${original.requestId}:${digest}`).digest("hex")}`;
+        let proof: PrimeNonAdmissionProof;
+        try {
+          const result = await this.observeHostProof(operationId, proofRequestId, {
+            method: "effect.non_admission",
+            targetRequestId: original.requestId,
+            targetRequestDigest: digest,
+            targetMethod: "paperclip.request",
+          });
+          if (result.kind !== "non_admission" || result.state !== "not_admitted" ||
+            result.operationId !== operationId || result.runId !== input.headerRunId ||
+            result.authorityDigest !== original.authorityDigest ||
+            result.targetRequestId !== original.requestId ||
+            result.targetRequestDigest !== digest || result.targetMethod !== "paperclip.request" ||
+            result.fence !== "stopped" || result.proofRequestId !== proofRequestId)
+            throw new Error("Host non-admission proof does not bind the original request");
+          proof = result as unknown as PrimeNonAdmissionProof;
+        } catch {
+          return { operationId, outcome: "uncertain", settlement: null, reconciliation: null };
+        }
+        try {
+          this.repository.persistReconciliation({
+            operationId, terminalReceiptId: candidate.terminal.receiptId,
+            terminalDigest: candidate.terminalDigest, requestId: original.requestId,
+            requestDigest: digest, proof,
+          });
+        } catch {
+          throw new PrimeRunBoundaryError("conflict", "Original recovery evidence or lease has changed");
+        }
       }
-      return "uncertain";
     }
-    this.repository.settleCancel(input.operationId, settlement);
-    return settlementProvesRelease(settlement) ? "stopped" : "uncertain";
+    if (this.repository.reconciliation(operationId))
+      return this.handoffReconciliation(operationId);
+    const settlement = await this.worker.reconcile(operationId);
+    if (settlement === "not_found") {
+      try { await this.recoverRemoteControl(operationId, false); }
+      catch { /* Keep the startup-orphan writer fenced. */ }
+      return { operationId, outcome: "uncertain", settlement: null, reconciliation: null };
+    }
+    this.repository.settleCancel(operationId, settlement);
+    return settlementProvesRelease(settlement)
+      ? { operationId, outcome: "stopped", settlement, reconciliation: null }
+      : { operationId, outcome: "uncertain", settlement: null, reconciliation: null };
   }
 }
