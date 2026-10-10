@@ -2,6 +2,13 @@
 
 Changes here describe the public source at a revision, not a claim that a managed live subscription run has qualified for production. Distribution readiness requires separate recorded evidence for the exact artifact and authorized environment.
 
+## Unreleased — bounded live acceptance — 2026-10-10 UTC
+
+- Completed a separately approved new-work acceptance with actual Prime 0.9.7, Python 3.14.7 and subscription-backed `gpt-6.1-sol` against source `6d42bb4149eadba60f1a61b982d984a8d47677ce`. Three provider requests had correlated completed receipts. Two cells preserved state, produced the expected calculation and saved a nonce-bearing file plus an agent-authored issue document.
+- A pending operator-review confirmation satisfied Paperclip's normal review gate. Host `in_review` finalization applied, the heartbeat succeeded in 24.841 seconds, provider/governed/worker settlement was confirmed, native worker and descendants stopped, the BFF writer lease released and a sealed checkpoint was recorded. Independent operator review then closed the acceptance task.
+- Preserved all earlier holds. The preceding fresh task's Python and document write succeeded, but the acceptance setup omitted a review path and finalization returned HTTP 422. Its host hold was not cleared or replayed; the corrected review-handoff task used a distinct workspace and issue after native/provider settlement, with no retained BFF agent lease.
+- Documented that `finish("in_review", ...)` needs an actual existing review path, not just a summary saying “awaiting review.” No runtime/package/protocol/schema changes were required for this corrected acceptance setup. Live children, MCP approval, cancellation, compaction and checkpoint continuation remain unqualified; this remains a prerelease.
+
 ## Unreleased — host Codex response admission
 
 - Removed the host's MIME-only rejection of successful Codex responses, matching Prime's native client: read the body and require correlated creation/terminal events before settlement. A new, separately approved live diagnostic proved that HTTP 200 was rejected at the header gate before any provider event was read. Its exact media subtype and response body were not retained, so this does not establish that the lost body was valid SSE or settle any held request.
